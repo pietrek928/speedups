@@ -2,7 +2,7 @@ from collections import namedtuple, defaultdict
 from copy import deepcopy, copy
 from typing import Tuple, Iterable, List
 
-from optim import _proc
+from optim import _proc, _prog, test
 
 
 class ProcCtx:
@@ -116,16 +116,6 @@ class ProcCtx:
 
         return used_items
 
-    def gen_code(self, op_l, ord=None):
-        if ord is None:
-            ord = range(len(op_l))
-
-        nums = {}
-        for i in ord:
-            v = op_l[i]
-            nums[v.orig] = i
-            v.print_op(nums)
-
     def used_ordered(self):
         g_rev = defaultdict(lambda: [])
         cnt = {}
@@ -152,7 +142,7 @@ class ProcCtx:
                 if not cnt[nv.orig]:
                     stack.append(nv)
 
-        return ordered
+        return ProgGraph(self._proc, ordered)
 
     def print_graph(self):
         g_rev = defaultdict(lambda: [])
@@ -452,6 +442,44 @@ class CvtNode(GNode):
         self.op: OpDescr = p.find_cvt_op(v, t)
 
 
+class ProgGraph:
+    def __init__(self, p: ProcCtx, op_l: List[GNode]):
+        self.p: ProcCtx = p
+        self.op_l: List[GNode] = op_l
+        self._prog = _prog(p, self.op_nums, self._simple_graph())
+
+    @property
+    def op_nums(self):
+        return tuple(
+            v.op.op_id for v in self.op_l
+        )
+
+    def _simple_graph(self, ord=None):
+        if ord is None:
+            ord = range(len(self.op_l))
+
+        G = []
+        nums = {}
+        for i in ord:
+            v = self.op_l[i]
+            nums[v.orig] = i
+            G.append(tuple(
+                nums[vn.orig] for vn in v.a
+            ))
+
+        return G
+
+    def gen_code(self, ord=None):
+        if ord is None:
+            ord = range(len(self.op_l))
+
+        nums = {}
+        for i in ord:
+            v = self.op_l[i]
+            nums[v.orig] = i
+            v.print_op(nums)
+
+
 mem_levels = (
     ('regs', 16, 0, 0.0),
     ('L1', 3200, 1, 7.0)
@@ -462,9 +490,9 @@ ops = (
     ('storeYv4', None, 7.0, (6, 1), True),
     ('storeYfloat', None, 7.0, (6, 1), True),
     ('loadYv4', 'v4', 7.0, (3, ), True),
-    ('addYv4Xv4', 'v4', 3.0, (3, 4), True),
+    ('addYv4Xv4', 'v4', 3.5, (3, 4), True),
     ('subYv4Xv4', 'v4', 3.0, (3, 4), True),
-    ('mulYv4Xv4', 'v4', 5.0, (5, ), True),
+    ('mulYv4Xv4', 'v4', 5.5, (5, ), True),
     ('negYv4', 'v4', 5.0, (5, ), True),
     ('notbitYv4', 'v4', 5.0, (5, ), True),
     ('cvtYv4Xfloat', 'float', 5.0, (7, ), True)
@@ -474,9 +502,21 @@ p = ProcCtx(mem_levels=mem_levels, ops=ops)
 
 a = p.load('v4', '&a')
 b = p.load('v4', '&b')
+c = p.load('v4', '&c')
+d = p.load('v4', '&d')
 b += a
+d += c
+a *= b
+c *= d
+b += a
+d += c
 c = a * (-~-b)
 c = p.cvt(c, 'float')
+p.store(a, '&a')
+p.store(b, '&b')
 p.store(c, '&c')
+p.store(d, '&d')
 # p.print_graph()
-p.gen_code(p.used_ordered())
+p.used_ordered().gen_code()
+
+test(p.used_ordered()._prog)

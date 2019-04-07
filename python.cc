@@ -8,9 +8,9 @@ BOOST_PYTHON_MODULE(optim) {
         .def("new_mem_level", &proc_descr::new_mem_level)
         .def("new_op", &proc_descr::new_op)
     ;
-}
 
-BOOST_PYTHON_MODULE(prog) {
-    class_<proc_descr, boost::noncopyable>("_prog", init<py::object p, py::object Gpy>())
+    class_<prog, boost::noncopyable>("_prog", init<py::object, py::object, py::object>())
     ;
+
+    def("test", test);
 }
