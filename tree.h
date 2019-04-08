@@ -63,6 +63,10 @@ class smtree {
         A.resize(size*2+1, node(0, 0));
     }
 
+    void clear() {
+        fill(A.begin(), A.end(), node(0, 0));
+    }
+
     // increments interval (b,e>
     // returns max on (b,∞)
     int inc(int b, int e) {

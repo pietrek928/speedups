@@ -500,23 +500,25 @@ ops = (
 
 p = ProcCtx(mem_levels=mem_levels, ops=ops)
 
-a = p.load('v4', '&a')
-b = p.load('v4', '&b')
-c = p.load('v4', '&c')
-d = p.load('v4', '&d')
-b += a
-d += c
-a *= b
-c *= d
-b += a
-d += c
-c = a * (-~-b)
-c = p.cvt(c, 'float')
-p.store(a, '&a')
-p.store(b, '&b')
-p.store(c, '&c')
-p.store(d, '&d')
-# p.print_graph()
-p.used_ordered().gen_code()
+t = []
+for i in range(100):
+    t.append(p.load('v4', str(i)))
 
+for i in range(100):
+    t[i] += t[(i + 3) % 100]
+for i in range(100):
+    t[i] *= t[(i + 4) % 100]
+for i in range(100):
+    t[i] += t[(i + 5) % 100]
+
+for i in range(100):
+    p.store(t[i], str(i))
+
+# p.print_graph()
+# p.used_ordered().gen_code()
+
+import time
+start = time.time()
 test(p.used_ordered()._prog)
+end = time.time()
+print(end - start)

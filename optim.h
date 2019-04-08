@@ -34,7 +34,10 @@ struct op_descr {
         : len_t(len_t), ports(ports) {}
 };
 
+class proc_state;
+
 class proc_descr {
+    friend class proc_state;
 
     struct mem_level {
         int size;
@@ -48,89 +51,6 @@ class proc_descr {
     vector<op_descr> ops;
     vector<mem_level> mem_descr;
 
-    class proc_state {
-        proc_descr & p;
-        smtree mt;
-        vector<op_time_t> ports_free_time; 
-        vector<op_time_t> end_t;
-        vector<int> last_usage;
-        map<int, op_time_t> m_port_map;
-        op_time_t op_start_t = 0;
-
-        public:
-
-        proc_state(proc_descr & p, int n_ops) :
-            p(p),
-            ports_free_time(p.n_ports, 0),
-            mt(n_ops+1),
-            end_t(n_ops),
-            last_usage(n_ops) {
-        }
-
-        auto &mem_level_select(int q_n) {
-            for (auto &m : p.mem_descr) {
-                if (q_n <= m.size)
-                    return m;
-                q_n -= m.size;
-            }
-            return p.mem_descr.back();
-        }
-
-        auto use_mem(int src_v, int op_step) {
-            auto src_step = last_usage[src_v];
-            int q_n = mt.inc(src_step, op_step);
-            auto &m =  mem_level_select(q_n);
-            op_start_t = max(op_start_t, end_t[src_v]);
-            m_port_map[m.port_n] += m.load_time;
-            last_usage[src_v] = op_step;
-        }
-
-        auto finish_time() {
-            return * max_element(ports_free_time.begin(), ports_free_time.end());
-        }
-
-        class op_adder {
-            proc_state & p;
-            op_descr & op;
-            int step_num;
-
-            public:
-
-            op_adder(proc_state &p, op_descr &op, int step_num)
-                :p(p), op(op), step_num(step_num) {}
-
-            void use_mem(int src_v) {
-                p.use_mem(src_v, step_num);
-            }
-
-            void perform(int v) {
-                for (const auto &m: p.m_port_map) {
-                    auto port_n = m.first;
-                    auto use_t = m.second;
-                    p.op_start_t = p.ports_free_time[port_n] =
-                        max(p.ports_free_time[port_n] + use_t, p.op_start_t);
-                }
-
-                int n = -1;
-                op_time_t ot = 1e18;
-                for (auto pn: op.ports) {
-                    if (p.ports_free_time[pn] < ot) {
-                        ot = p.ports_free_time[pn];
-                        n = pn;
-                    }
-                }
-                ot = p.op_start_t = max(p.op_start_t, ot);
-                p.end_t[v] = p.ports_free_time[n] = ot + op.len_t;
-                p.last_usage[v] = step_num;
-            }
-        };
-
-        auto add_new_op(op_descr &op, int step_num) {
-            m_port_map.clear();
-            return op_adder(*this, op, step_num);
-        }
-    };
-
     public:
     proc_descr(int n_ports) : n_ports(n_ports) {}
 
@@ -138,9 +58,9 @@ class proc_descr {
         return & ops[op_id];
     }
 
-    auto new_state(int n_ops) {
-        return proc_state(*this, n_ops);
-    }
+//    auto new_state(int n_ops) {
+//        return proc_state(*this, n_ops);
+//    }
 
     int new_mem_level(int size, int port_n, op_time_t load_time) {
         auto r = mem_descr.size();
@@ -157,6 +77,96 @@ class proc_descr {
     }
 };
 
+class proc_state {
+    proc_descr & p;
+    smtree mt;
+    vector<op_time_t> ports_free_time;
+    vector<op_time_t> end_t;
+    vector<int> last_usage;
+    map<int, op_time_t> m_port_map;
+    op_time_t op_start_t;
+
+    public:
+
+    proc_state(proc_descr & p, int n_ops) :
+        p(p),
+        ports_free_time(p.n_ports, 0),
+        mt(n_ops+1),
+        end_t(n_ops),
+        last_usage(n_ops) {
+        clear();
+    }
+
+    void clear() {
+        op_start_t = 0;
+        mt.clear();
+        fill(ports_free_time.begin(), ports_free_time.end(), 0);
+    }
+
+    auto &mem_level_select(int q_n) {
+        for (auto &m : p.mem_descr) {
+            if (q_n <= m.size)
+                return m;
+            q_n -= m.size;
+        }
+        return p.mem_descr.back();
+    }
+
+    auto use_mem(int src_v, int op_step) {
+        auto src_step = last_usage[src_v];
+        int q_n = mt.inc(src_step, op_step);
+        auto &m =  mem_level_select(q_n);
+        op_start_t = max(op_start_t, end_t[src_v]);
+        m_port_map[m.port_n] += m.load_time;
+        last_usage[src_v] = op_step;
+    }
+
+    auto finish_time() {
+        return * max_element(ports_free_time.begin(), ports_free_time.end());
+    }
+
+    class op_adder {
+        proc_state & p;
+        op_descr & op;
+        int step_num;
+
+        public:
+
+        op_adder(proc_state &p, op_descr &op, int step_num)
+            :p(p), op(op), step_num(step_num) {}
+
+        void use_mem(int src_v) {
+            p.use_mem(src_v, step_num);
+        }
+
+        void perform(int v) {
+            for (const auto &m: p.m_port_map) {
+                auto port_n = m.first;
+                auto use_t = m.second;
+                p.op_start_t = p.ports_free_time[port_n] =
+                    max(p.ports_free_time[port_n] + use_t, p.op_start_t);
+            }
+
+            int n = -1;
+            op_time_t ot = 1e18;
+            for (auto pn: op.ports) {
+                if (p.ports_free_time[pn] < ot) {
+                    ot = p.ports_free_time[pn];
+                    n = pn;
+                }
+            }
+            ot = p.op_start_t = max(p.op_start_t, ot);
+            p.end_t[v] = p.ports_free_time[n] = ot + op.len_t;
+            p.last_usage[v] = step_num;
+        }
+    };
+
+    auto add_new_op(op_descr &op, int step_num) {
+        m_port_map.clear();
+        return op_adder(*this, op, step_num);
+    }
+};
+
 class prog {
     py::object p_ref;
     proc_descr &p;
@@ -165,10 +175,15 @@ class prog {
     vector<vector<int>> G;
     vector<vector<int>> G_rev;
 
+    vector<int> left;
+    proc_state state;
+    priority_queue<pair<int, int>, vector<pair<int, int>>, greater<pair<int, int>>> node_queue;
+
     public:
 
-    prog(py::object p, py::object nops_list, py::object Gpy) : p(py::extract<proc_descr&>(p)), p_ref(p) {
-        auto n = py::len(nops_list);
+    prog(py::object p, py::object nops_list, py::object Gpy)
+        : p(py::extract<proc_descr&>(p)), p_ref(p), left(py::len(nops_list)), state(this->p, left.size()) {
+        auto n = left.size();
         ops.resize(n);
         G_rev.resize(n);
 
@@ -202,25 +217,22 @@ class prog {
     auto reorder_f(vector<int> &order) {
         int step_num=0;
 
-        vector<int> left(order.size());
-        priority_queue<pair<int, int>, vector<pair<int, int>>, greater<pair<int, int>>> q;
-
-        auto state = p.new_state(order.size());
+        state.clear();
 
         for (int i=0; i<G.size(); i++) {
             int n = left[i] = G[i].size();
             if (!n) {
-                q.emplace(order[i], i);
+                node_queue.emplace(order[i], i);
             }
         }
 
-        while (!q.empty()) {
-            auto v = q.top().second; q.pop();
+        while (!node_queue.empty()) {
+            auto v = node_queue.top().second; node_queue.pop();
             order[v] = step_num++;
             for (auto vn : G_rev[v]) {
                 left[vn] --;
                 if (!left[vn]) {
-                    q.emplace(order[vn], vn);
+                    node_queue.emplace(order[vn], vn);
                 }
             }
 
@@ -237,7 +249,6 @@ class prog {
     void reorder_b(vector<int> &order) {
         int o=G.size();
 
-        vector<int> left(order.size());
         priority_queue<pair<int, int>, vector<pair<int, int>>, less<pair<int, int>>> q;
 
         for (int i=0; i<G_rev.size(); i++) {
@@ -259,41 +270,65 @@ class prog {
         }
     }
 
-    auto score(vector<int> &order) { ////// !!!!!!!!!!!!!!!!!!
-        vector<int> last_usage(order.size()+1);
-        vector<int> op_step(order.size());
-
-        for (int i=0; i<order.size(); i++)
-            op_step[order[i]] = i+1;
-
-        auto state = p.new_state(order.size());
-
-        for (int step_num=1; step_num<=order.size(); step_num++) {
-            int op_n = order[step_num-1];
-
-            auto op_adder = state.add_new_op(*ops[op_n], step_num);
-            for (auto v : G[op_n]) {
-                auto v_step = op_step[v];
-                op_adder.use_mem(v_step);
-                last_usage[v_step] = step_num;
-            }
-
-            last_usage[step_num] = step_num-1;
-        }
-
-        return state.finish_time();
-    }
+//    auto score(vector<int> &order) { ////// !!!!!!!!!!!!!!!!!!
+//        vector<int> last_usage(order.size()+1);
+//        vector<int> op_step(order.size());
+//
+//        for (int i=0; i<order.size(); i++)
+//            op_step[order[i]] = i+1;
+//
+//        auto state = p.new_state(order.size());
+//
+//        for (int step_num=1; step_num<=order.size(); step_num++) {
+//            int op_n = order[step_num-1];
+//
+//            auto op_adder = state.add_new_op(*ops[op_n], step_num);
+//            for (auto v : G[op_n]) {
+//                auto v_step = op_step[v];
+//                op_adder.use_mem(v_step);
+//                last_usage[v_step] = step_num;
+//            }
+//
+//            last_usage[step_num] = step_num-1;
+//        }
+//
+//        return state.finish_time();
+//    }
 };
 
 void test(prog &prg) {
     vector<int> ord;
+    float score = 1e18;
     for (int i=0; i<prg.size(); i++) {
         ord.push_back(-i);
     }
     cout << prg.reorder_f(ord) << endl;
-    for (auto &v: ord) {
-        cout << v << " ";
+    for (int k=0; k<20; k++) {
+        for (int j=25; j>=1; j--) {
+            for (int i=0; i<ord.size(); i++) {
+                auto ord_new = ord;
+                ord_new[i]+=3;
+                auto score_new = prg.reorder_f(ord_new);
+                if (score_new <= score) {
+                    score = score_new;
+                    ord = ord_new;
+                }
+            }
+        }
+        for (int j=25; j>=1; j--) {
+            for (int i=ord.size()-1; i>=0; i--) {
+                auto ord_new = ord;
+                ord_new[i]-=j;
+                auto score_new = prg.reorder_f(ord_new);
+                if (score_new <= score) {
+                    score = score_new;
+                    ord = ord_new;
+                }
+            }
+}
     }
+    cout << prg.reorder_f(ord) << endl;
+    cout << 500 * ord.size();
     cout << endl;
 }
 
