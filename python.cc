@@ -9,7 +9,7 @@ BOOST_PYTHON_MODULE(optim) {
         .def("new_op", &proc_descr::new_op)
     ;
 
-    class_<prog, boost::noncopyable>("_prog", init<py::object, py::object, py::object>())
+    class_<prog>("_prog", init<py::object, py::object, py::object>())
     ;
 
     def("test", test);
