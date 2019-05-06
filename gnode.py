@@ -2,9 +2,9 @@ from __future__ import annotations
 
 from collections import namedtuple
 from copy import deepcopy, copy
-from typing import Tuple, Iterable, Type
+from typing import Tuple, Iterable, List
 
-from vtypes import VType
+from vtypes import VType, OpDescr
 
 attr_types = {
     'zero': 10,
@@ -23,27 +23,27 @@ class GNode:
 
     def __init__(self, p):
         self.p = p
-        self.op = None
-        self.attr_stack = []
+        self.op: OpDescr = None
+        self.attr_stack: List[AttrGroup] = []
         self.num_attrs = set()
 
-    def flush_attr(self):
+    def flush_attr(self) -> GNode:
         self = self.copy()
         for grp in self.attr_stack:
             for a in sorted(grp.attrs):
                 self = getattr(self, 'apply_' + a)()
         return self
 
-    def apply_notbit(self):
+    def apply_notbit(self) -> GNode:
         return self.p.op('notbit', self)
 
-    def apply_inv(self):
+    def apply_inv(self) -> GNode:
         return self.p.op('invdiv', self)
 
-    def apply_neg(self):
+    def apply_neg(self) -> GNode:
         return self.p.op('neg', self)
 
-    def __add__(self, v):
+    def __add__(self, v: GNode) -> GNode:
         if v.neg:
             return self-(-v)
         if self.neg:
@@ -54,7 +54,7 @@ class GNode:
             return v
         return self.gen_op('add', self, v)
 
-    def __sub__(self, v):
+    def __sub__(self, v: GNode) -> GNode:
         if self.issame(v):
             return self.gen_zero()
         if self.neg:
@@ -67,7 +67,7 @@ class GNode:
             return -v
         return self.gen_op('sub', self, v)
 
-    def __mul__(self, v):
+    def __mul__(self, v: GNode) -> GNode:
         if self.neg:
             return -(v * (-self))
         # if self.get('invdiv'):
@@ -78,7 +78,7 @@ class GNode:
             return v
         return self.gen_op('mul', self, v)
 
-    def __truediv__(self, v):
+    def __truediv__(self, v: GNode) -> GNode:
         if self.issame(v):
             return self.gen_one()
         if self.zero:
@@ -89,81 +89,69 @@ class GNode:
             return v.setnot('invdiv')
         return self.gen_op('div', self, v)
 
-    def __neg__(self):
+    def __neg__(self) -> GNode:
         return self.setnot('neg')
 
-    def __invert__(self):
+    def __invert__(self) -> GNode:
         return self.setnot('notbit')
 
-    def __and__(self, v):
+    def __and__(self, v: GNode) -> GNode:
         if self.notbit and v.notbit:
             return ~((~self) | (~v))
         if self.zero:
-            return self
+            return self.copy()
         if v.zero:
-            return v
+            return v.copy()
 
         return self.gen_op('and', self, v)
 
-    def __or__(self, v):
+    def __or__(self, v: GNode) -> GNode:
         if self.notbot and v.notbit:
             return ~((~self) & (~v))
         if self.zero:
-            return v
+            return v.copy()
         if v.zero:
-            return self
+            return self.copy()
 
         return self.gen_op('or', self, v)
 
-    def __xor__(self, v):
+    def __xor__(self, v: GNode) -> GNode:
         if self.issame(v):
             return self.gen_zero()
         if self.notbit and v.notbit:
             return (~self) ^ (~v)
         if self.zero:
-            return self
+            return self.copy()
         if v.zero:
-            return v
+            return v.copy()
 
         return self.gen_op('xor', self, v)
 
-    def shufl(self, v, c=None, r=None):
-        n = 'shufl'
-        if c:
-            n += 'c' + c
-        if r:
-            n += 'r' + r
+    def shuf(self, v, *d) -> Tuple[GNode, GNode]:
+        n = ''
+        for i, s in enumerate(d):
+            if s:
+                n += 'X{}S{}'.format(i, s)
 
-        self.gen_op(n, self, v)
+        return self.gen_op('shufl' + n, self, v), \
+               self.gen_op('shufh' + n, self, v)
 
-    def shufh(self, v, c=None, r=None):
-        n = 'shufh'
-        if c:
-            n += 'c' + c
-        if r:
-            n += 'r' + r
+    def rotp(self, v: GNode, p: int, dn: int):
+        dim_sz = v.op.out_t.dims[dn]
+        assert p <= dim_sz
+        if not p:
+            return self.copy()
+        if p == dim_sz:
+            return v.copy()
+        v_hlp = self.gen_op('movehalf1h2l{}'.format(dn), self, v)
+        if p == dim_sz / 2:
+            return v_hlp
+        if p < dim_sz / 2:
+            return self.gen_op('rothalfd{}p{}'.format(dn, p), self, v_hlp)
+        else:
+            return self.gen_op('rothalfd{}p{}'.format(dn, p - dim_sz / 2), v_hlp, v)
 
-        return self.gen_op(n, self, v)
-
-    def rotl(self, v, c=None, r=None):
-        n = 'rotl'
-        if c:
-            n += 'c' + c
-        if r:
-            n += 'r' + r
-
-        self.gen_op(n, self, v)
-
-    def rotr(self, v, c=None, r=None):
-        n = 'rotr'
-        if c:
-            n += 'c' + c
-        if r:
-            n += 'r' + r
-
-        return self.gen_op(n, self, v)
-
-    def setnot(self, a):
+    def setnot(self, a: str) -> GNode:
         self = self.copy()
         type = attr_types[a]
 
@@ -181,23 +169,23 @@ class GNode:
 
         return self
 
-    def __getattr__(self, a):
+    def __getattr__(self, a: str) -> bool:
         if a.startswith('_'):
             return super().__getattribute__(a)
         if not self.attr_stack:
             return a in self.num_attrs
         return a in self.attr_stack[-1].attrs
 
-    def gen_op(self, n, *a):
+    def gen_op(self, n: str, *a: GNode) -> GNode:
         a = [v.flush_attr() for v in a]
         return self.p.op(n, *a)
 
-    def gen_zero(self):
+    def gen_zero(self) -> GNode:
         ret = self.p.zero(self.op.out_t)
         ret.attr_stack.add('zero')
         return ret
 
-    def gen_one(self):
+    def gen_one(self) -> GNode:
         ret = self.p.const(self.op.out_t, 1.0)
         ret.attr_stack.add('one')
         return ret
@@ -206,14 +194,14 @@ class GNode:
     def orig(self):
         return self.__dict__.get('_orig', id(self))
 
-    def copy(self):
+    def copy(self) -> GNode:
         r = copy(self)
         r._orig = self.orig
         r.attr_stack = deepcopy(self.attr_stack)
         r.num_attrs = deepcopy(self.num_attrs)
         return r
 
-    def issame(self, v):
+    def issame(self, v: GNode) -> GNode:
         return (
             self.orig == v.orig
             and self.key == v.key

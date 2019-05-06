@@ -1,8 +1,9 @@
-from collections import namedtuple, defaultdict
+from collections import defaultdict
+from typing import Dict, Iterable
 
 from optim import _proc
 
-from gnode import OpNode, ConstNode, StoreNode, LoadNode, CvtNode
+from gnode import OpNode, ConstNode, StoreNode, LoadNode, CvtNode, GNode, OpDescr
 from graph import ProgGraph
 from utils import str_list
 from vtypes import VType
@@ -11,7 +12,7 @@ from vtypes import VType
 class ProcCtx:
 
     def __init__(self, mem_levels, ops):
-        self.ops = {}
+        self.ops: Dict[str, OpDescr] = {}
         ports = set(sum(
             (o[3] for o in ops),
             tuple(m[2] for m in mem_levels)
@@ -28,11 +29,11 @@ class ProcCtx:
                 [port2n[p] for p in ports]
             )
             self.ops[n] = OpDescr(n, op_id, ordered, out_t)
-        self.op_g = {}
-        self._proc = p
+        self.op_g: Dict[str, GNode] = {}
+        self._proc: _proc = p
         dict()
 
-    def find_op(self, n, a):
+    def find_op(self, n: str, a: Iterable[GNode]):
         t = str_list(v.op.out_t for v in a)
         try:
             op_n = '{}Y{}'.format(n, 'X'.join(t))
@@ -52,15 +53,15 @@ class ProcCtx:
         op_n = 'loadY{}'.format(t)
         return self.ops[op_n]
 
-    def find_cvt_op(self, v, t: VType):
+    def find_cvt_op(self, v: GNode, t: VType):
         op_n = 'cvtY{}X{}'.format(v.op.out_t, t)
         return self.ops[op_n]
 
-    def find_store_op(self, t):
+    def find_store_op(self, t: VType):
         op_n = 'storeY{}'.format(t)
         return self.ops[op_n]
 
-    def _add_n(self, v):
+    def _add_n(self, v: GNode):
         k = v.key
         if k in self.op_g:
             return self.op_g[k].copy()
@@ -73,7 +74,7 @@ class ProcCtx:
             OpNode(self, n, a)
         )
 
-    def cvt(self, v, t: VType):
+    def cvt(self, v: GNode, t: VType):
         return self._add_n(
             CvtNode(self, v, t)
         )
@@ -83,7 +84,7 @@ class ProcCtx:
             LoadNode(self, t, val)
         )
 
-    def store(self, v, val):
+    def store(self, v: GNode, val):
         return self._add_n(
             StoreNode(self, v, val)
         )
@@ -174,6 +175,3 @@ class ProcCtx:
                     stack.append(nv)
             print('{}: {} {}'.format(
                 n, v.key, ' '.join(str(nums[nv.orig]) for nv in v.a)))
-
-
-OpDescr = namedtuple('op_descr', ('name', 'op_id', 'ordered', 'out_t'))

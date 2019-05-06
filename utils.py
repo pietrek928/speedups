@@ -9,7 +9,17 @@ def get_p2(n):
         n >>= 1
 
 
-def mulc(a, k):
+def addi(a, s):
+    if not a:
+        return s
+    if not s:
+        return a
+    if isinstance(int, a) and isinstance(int, s):
+        return a + s
+    return '(({})*({}))'.format(a, s)
+
+
+def muli(a, k):
     if not k:
         return 0
     if k == 1:
@@ -19,7 +29,7 @@ def mulc(a, k):
     return '(({})*({}))'.format(a, k)
 
 
-def divc(a, k):
+def divi(a, k):
     if not k:
         return
     if k == 1:
@@ -29,7 +39,7 @@ def divc(a, k):
     return '(({})/({}))'.format(a, k)
 
 
-def modc(a, k):
+def modi(a, k):
     if not k:
         return
     if k == 1:
