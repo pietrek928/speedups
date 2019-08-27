@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from collections import namedtuple
 from copy import deepcopy, copy
-from typing import Tuple, Iterable, List
+from typing import Tuple, Iterable, List, NamedTuple, Set
 
+from utils import get_p2
 from vtypes import VType, OpDescr
 
 attr_types = {
@@ -14,18 +14,28 @@ attr_types = {
     'invdiv': 4
 }
 
-AttrGroup = namedtuple('attr_group', ('type', 'attrs'))
+AttrGroup = NamedTuple('AttrGroup', (('type', int), ('attrs', Set[str])))
+OpScope = NamedTuple('OpScope', (('start_pos', int), ('end_pos', int), ('exp_use', float)))
 
 
 class GNode:
     a = ()
     val_args = ()
 
-    def __init__(self, p):
+    def __init__(self, p, scope_n: int):
         self.p = p
+        self.scope_n: int = scope_n
         self.op: OpDescr = None
         self.attr_stack: List[AttrGroup] = []
         self.num_attrs = set()
+
+    @property
+    def type(self) -> VType:
+        return self.op.out_t
+
+    @property
+    def op_name(self):
+        return self.op.name
 
     def flush_attr(self) -> GNode:
         self = self.copy()
@@ -45,9 +55,9 @@ class GNode:
 
     def __add__(self, v: GNode) -> GNode:
         if v.neg:
-            return self-(-v)
+            return self - (-v)
         if self.neg:
-            return v-(-self)
+            return v - (-self)
         if v.zero:
             return self
         if self.zero:
@@ -58,9 +68,9 @@ class GNode:
         if self.issame(v):
             return self.gen_zero()
         if self.neg:
-            return -((-self)+v)
+            return -((-self) + v)
         if v.neg:
-            return self+(-v)
+            return self + (-v)
         if v.zero:
             return self
         if self.zero:
@@ -127,26 +137,44 @@ class GNode:
 
         return self.gen_op('xor', self, v)
 
-    def shuf(self, v, *d) -> Tuple[GNode, GNode]:
+    def shuf(self, v: GNode, *dshifts) -> Tuple[GNode, GNode]:
         n = ''
-        for i, s in enumerate(d):
+        for i, s in enumerate(dshifts):
             if s:
                 n += 'X{}S{}'.format(i, s)
 
         return self.gen_op('shufl' + n, self, v), \
                self.gen_op('shufh' + n, self, v)
 
+    @staticmethod
+    def shuf_dims(n: int, vecs: Iterable[GNode]) -> Tuple[GNode]:
+        vecs: List[GNode] = list(vecs)
+        if vecs:
+            vdims = vecs[0].type.dims
+            assert n < len(vdims)
+
+            dim_sz = vdims[n]
+            dim_shuf = tuple(int(i == n) for i in range(len(vdims)))
+            assert len(vecs) == dim_sz
+
+            for it_n in reversed(range(get_p2(dim_sz))):
+                s = 2 ** it_n
+                for i in range(0, dim_sz, s * 2):
+                    for j in range(s):
+                        vecs[i + j], vecs[i + j + s] = vecs[i + j].shuf(vecs[i + j + s], *dim_shuf)
+        return tuple(vecs)
+
     def rotp(self, v: GNode, p: int, dn: int):
-        dim_sz = v.op.out_t.dims[dn]
+        dim_sz = v.type.dims[dn]
         assert p <= dim_sz
         if not p:
             return self.copy()
         if p == dim_sz:
             return v.copy()
         v_hlp = self.gen_op('movehalf1h2l{}'.format(dn), self, v)
-        if p == dim_sz / 2:
+        if p == dim_sz // 2:
             return v_hlp
-        if p < dim_sz / 2:
+        if p < dim_sz // 2:
             return self.gen_op('rothalfd{}p{}'.format(dn, p), self, v_hlp)
         else:
             return self.gen_op('rothalfd{}p{}'.format(dn, p - dim_sz / 2), v_hlp, v)
@@ -181,12 +209,12 @@ class GNode:
         return self.p.op(n, *a)
 
     def gen_zero(self) -> GNode:
-        ret = self.p.zero(self.op.out_t)
+        ret = self.p.zero(self.type)
         ret.attr_stack.add('zero')
         return ret
 
     def gen_one(self) -> GNode:
-        ret = self.p.const(self.op.out_t, 1.0)
+        ret = self.p.const(self.type, 1.0)
         ret.attr_stack.add('one')
         return ret
 
@@ -203,52 +231,52 @@ class GNode:
 
     def issame(self, v: GNode) -> GNode:
         return (
-            self.orig == v.orig
-            and self.key == v.key
-            and self.num_attrs == v.num_attrs
-            and self.attr_stack == v.attr_stack
+                self.orig == v.orig
+                and self.key == v.key
+                and self.num_attrs == v.num_attrs
+                and self.attr_stack == v.attr_stack
         )
 
     @property
     def key(self) -> str:
         if self.op.ordered:
             return '{}Y{}'.format(
-                self.op.name,
+                self.op_name,
                 'X'.join(str(o.orig) for o in self.a)
             )
         else:
             return '{}Y{}'.format(
-                self.op.name,
+                self.op_name,
                 'X'.join(sorted(str(o.orig) for o in self.a))
             )
 
     def print_op(self, nums):
         op_call = '{}({});'.format(
-            self.op.name,
+            self.op_name,
             ', '.join([
-                str(val) for val in self.val_args
-            ] + [
-                'v{}'.format(nums[v.orig]) for v in self.a
-            ])
+                          str(val) for val in self.val_args
+                      ] + [
+                          'v{}'.format(nums[v.orig]) for v in self.a
+                      ])
         )
-        if self.op.out_t:
-            print('{} v{} = {}'.format(self.op.out_t, nums[self.orig], op_call))
+        if self.type:
+            print('{} v{} = {}'.format(self.type, nums[self.orig], op_call))
         else:
             print(op_call)
 
 
 class OpNode(GNode):
     def __init__(self, p, n: str, a: Iterable[GNode]):
-        super().__init__(p)
+        super().__init__(p, p.get_scope_n(*a))
         self.a: Tuple[GNode] = tuple(a)
         self.op = p.find_op(n, a)
 
 
 class StoreNode(GNode):
     def __init__(self, p, v: GNode, val):
-        super().__init__(p)
-        self.a: Tuple[GNode] = (v, )
-        self.op = p.find_store_op(v.op.out_t)
+        super().__init__(p, p.get_scope_n(v))
+        self.a: Tuple[GNode] = (v,)
+        self.op = p.find_store_op(v.type)
         self.val = val
 
     @property
@@ -260,9 +288,35 @@ class StoreNode(GNode):
         return '{}Z{}'.format(super().key, self.val)
 
 
+class VarNode(GNode):
+    def __init__(self, p, t: VType, name: str):
+        super().__init__(p, p.get_scope_n())
+        self.t = t
+        self.name = name
+
+    @property
+    def type(self):
+        return self.t
+
+    @property
+    def op_name(self):
+        return str(self.t)
+
+    @property
+    def val_args(self):
+        return self.name,
+
+    @property
+    def key(self) -> str:
+        return '{}Z{}'.format(self.name, self.val)
+
+    def print_op(self, nums):
+        pass
+
+
 class ConstNode(GNode):
     def __init__(self, p, t: VType, val):
-        super().__init__(p)
+        super().__init__(p, p.get_scope_n())
         self.op = p.find_const_op(t)
         self.val = val
 
@@ -272,12 +326,12 @@ class ConstNode(GNode):
 
     @property
     def key(self) -> str:
-        return '{}Z{}'.format(self.op.name, self.val)
+        return '{}Z{}'.format(self.op_name, self.val)
 
 
 class LoadNode(GNode):
     def __init__(self, p, t: VType, val):
-        super().__init__(p)
+        super().__init__(p, p.get_scope_n())
         self.op = p.find_load_op(t)
         self.val = val
 
@@ -287,12 +341,11 @@ class LoadNode(GNode):
 
     @property
     def key(self) -> str:
-        return '{}Z{}'.format(self.op.name, self.val)
+        return '{}Z{}'.format(self.op_name, self.val)
 
 
 class CvtNode(GNode):
     def __init__(self, p, v: GNode, t: VType):
-        super().__init__(p)
-        self.a = (v, )
+        super().__init__(p, p.get_scope_n(v))
+        self.a = (v,)
         self.op = p.find_cvt_op(v, t)
-

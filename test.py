@@ -1,6 +1,6 @@
 from optim import test
 
-from proc import ProcCtx
+from flow import FlowGraph
 from vtypes import v4f, float_
 
 mem_levels = (
@@ -21,7 +21,7 @@ ops = (
     ('cvtYv4fXfloat', float_, 5.0, (7, ), True)
 )
 
-p = ProcCtx(mem_levels=mem_levels, ops=ops)
+p = FlowGraph(mem_levels=mem_levels, ops=ops)
 
 t = []
 for i in range(100):

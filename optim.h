@@ -168,10 +168,26 @@ class proc_state {
 };
 
 class prog {
+    struct single_op_descr {
+        op_descr *op;
+        int start_pos, end_pos;
+        float exp_use;
+
+        inline auto clamp_pos(int pos) {
+            if (start_pos > pos) {
+                return start_pos
+            }
+            if (end_pos < pos) {
+                return end_pos;
+            }
+            return pos;
+        }
+    };
+
     py::object p_ref;
     proc_descr &p;
 
-    vector<op_descr*> ops;
+    vector<single_op_descr> ops;
     vector<vector<int>> G;
     vector<vector<int>> G_rev;
 
@@ -188,9 +204,14 @@ class prog {
         G_rev.resize(n);
 
         for (long i=0; i<n; i++) {
-            ops[i] = (this->p).get_op(
-                py::extract<int>(nops_list[i])
+            auto &cur_op = ops[i];
+            auto &cur_obj = nops_list[i];
+            cur_op.op = (this->p).get_op(
+                py::extract<int>(cur_obj.attr("nop"))
             );
+            cur_op.start_pos = py::extract<int>(cur_obj.attr("start_pos"));
+            cur_op.end_pos = py::extract<int>(cur_obj.attr("end_pos"));
+            cur_op.exp_use = py::extract<float>(exp_use.attr("exp_use"));
         }
 
         for (long i=0; i<n; i++) {
@@ -222,7 +243,7 @@ class prog {
         for (int i=0; i<G.size(); i++) {
             int n = left[i] = G[i].size();
             if (!n) {
-                node_queue.emplace(order[i], i);
+                node_queue.emplace(ops[i].clamp_pos(order[i]), i);
             }
         }
 
@@ -232,11 +253,11 @@ class prog {
             for (auto vn : G_rev[v]) {
                 left[vn] --;
                 if (!left[vn]) {
-                    node_queue.emplace(order[vn], vn);
+                    node_queue.emplace(ops[vn].clamp_pos(order[vn]), vn);
                 }
             }
 
-            auto op_adder = state.add_new_op(*ops[v], step_num);
+            auto op_adder = state.add_new_op(* ops[v].op, step_num);
             for (auto vb : G[v]) {
                 op_adder.use_mem(vb);
             }
@@ -249,22 +270,22 @@ class prog {
     void reorder_b(vector<int> &order) {
         int o=G.size();
 
-        priority_queue<pair<int, int>, vector<pair<int, int>>, less<pair<int, int>>> q;
+        //priority_queue<pair<int, int>, vector<pair<int, int>>, less<pair<int, int>>> q;
 
         for (int i=0; i<G_rev.size(); i++) {
             int n = left[i] = G_rev[i].size();
             if (!n) {
-                q.emplace(order[i], i);
+                node_queue.emplace(o - ops[i].clamp_pos(order[i]), i);
             }
         }
 
-        while (!q.empty()) {
-            auto v = q.top().second; q.pop();
+        while (!node_queue.empty()) {
+            auto v = node_queue.top().second; q.pop();
             order[v] = --o;
             for (auto i : G[v]) {
                 left[i] --;
                 if (!left[i]) {
-                    q.emplace(order[i], i);
+                    node_queue.emplace(ops[i].clamp_pos(order[i]), i);
                 }
             }
         }

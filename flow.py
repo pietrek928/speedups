@@ -1,5 +1,5 @@
 from collections import defaultdict
-from typing import Dict, Iterable
+from typing import Dict, Iterable, List
 
 from optim import _proc
 
@@ -9,8 +9,16 @@ from utils import str_list
 from vtypes import VType
 
 
-class ProcCtx:
+class ScopeDescr:
+    def __init__(self, exp_use: float):
+        self._exp_use = exp_use
+        self._nodes = []
 
+    def append(self, v: 'GNode'):
+        self._nodes.append(v)
+
+
+class FlowGraph:
     def __init__(self, mem_levels, ops):
         self.ops: Dict[str, OpDescr] = {}
         ports = set(sum(
@@ -29,12 +37,12 @@ class ProcCtx:
                 [port2n[p] for p in ports]
             )
             self.ops[n] = OpDescr(n, op_id, ordered, out_t)
-        self.op_g: Dict[str, GNode] = {}
+        self._op_idx: Dict[str, GNode] = {}
         self._proc: _proc = p
-        dict()
+        self._scope_stack: List[ScopeDescr] = []
 
     def find_op(self, n: str, a: Iterable[GNode]):
-        t = str_list(v.op.out_t for v in a)
+        t = str_list(v.type for v in a)
         try:
             op_n = '{}Y{}'.format(n, 'X'.join(t))
             return self.ops[op_n]
@@ -54,7 +62,7 @@ class ProcCtx:
         return self.ops[op_n]
 
     def find_cvt_op(self, v: GNode, t: VType):
-        op_n = 'cvtY{}X{}'.format(v.op.out_t, t)
+        op_n = 'cvtY{}X{}'.format(v.type, t)
         return self.ops[op_n]
 
     def find_store_op(self, t: VType):
@@ -63,13 +71,33 @@ class ProcCtx:
 
     def _add_n(self, v: GNode):
         k = v.key
-        if k in self.op_g:
-            return self.op_g[k].copy()
+        if k in self._op_idx:
+            return self._op_idx[k].copy()
         else:
-            self.op_g[k] = v
+            self._op_idx[k] = v
+            self._scope_stack[v.scope_n].append(v)
             return v
 
-    def op(self, n, *a):
+    def new_scope(self, exp_use):
+        self._scope_stack.append(
+            ScopeDescr(
+                exp_use=exp_use
+            )
+        )
+
+    # def end_scope(self):
+    #     self._scope_stack.pop()
+
+    def get_scope_n(self, *a: GNode) -> int:
+        scopes = tuple(
+            v.scope_n for v in a
+        )
+        try:
+            return max(scopes)
+        except ValueError:
+            return len(self._scope_stack) - 1
+
+    def op(self, n, *a: GNode):
         return self._add_n(
             OpNode(self, n, a)
         )
@@ -104,8 +132,8 @@ class ProcCtx:
         stack = {}
         used = set()
 
-        for v in self.op_g.values():
-            if v.op.out_t is None:
+        for v in self._op_idx.values():
+            if v.type is None:
                 stack[v.orig] = v
 
         used_items = []

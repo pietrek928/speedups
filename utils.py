@@ -1,12 +1,13 @@
-def is_p2(n):
-    return (n-1) & n == 0
+def is_p2(n) -> bool:
+    return isinstance(n, int) and (n-1) & n == 0
 
 
-def get_p2(n):
+def get_p2(n: int) -> int:
     p2 = 0
     while n > 1:
         p2 += 1
         n >>= 1
+    return p2
 
 
 def addi(a, s):
@@ -14,7 +15,7 @@ def addi(a, s):
         return s
     if not s:
         return a
-    if isinstance(int, a) and isinstance(int, s):
+    if isinstance(a, int) and isinstance(s, int):
         return a + s
     return '(({})*({}))'.format(a, s)
 
