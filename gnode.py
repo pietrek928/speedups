@@ -218,6 +218,9 @@ class GNode:
         ret.attr_stack.add('one')
         return ret
 
+    def store(self, val):
+        self.p.store(self, val)
+
     @property
     def orig(self):
         return self.__dict__.get('_orig', id(self))

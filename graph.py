@@ -1,11 +1,15 @@
+from typing import Iterable, List, Tuple, Any, Dict
+
 from optim import _prog
 
+from gnode import GNode, OpScope
 
-class ProgGraph:
-    def __init__(self, p, op_l):
+
+class GraphOptim:
+    def __init__(self, p, op_l: Iterable[GNode], op_scopes: Iterable[OpScope]):
         self.p = p
-        self.op_l = op_l
-        self._prog = _prog(p, self.op_nums, self._simple_graph())
+        self.op_l: Tuple[GNode] = tuple(op_l)
+        self._prog = _prog(p, self.op_nums, self._simple_graph(), op_scopes)
 
     @property
     def op_nums(self):
@@ -13,12 +17,12 @@ class ProgGraph:
             v.op.op_id for v in self.op_l
         )
 
-    def _simple_graph(self, ord=None):
+    def _simple_graph(self, ord: Iterable[int] = None) -> List[Tuple[int]]:
         if ord is None:
             ord = range(len(self.op_l))
 
         G = []
-        nums = {}
+        nums: Dict[Any, int] = {}
         for i in ord:
             v = self.op_l[i]
             nums[v.orig] = i
@@ -27,14 +31,3 @@ class ProgGraph:
             ))
 
         return G
-
-    def gen_code(self, ord=None):
-        if ord is None:
-            ord = range(len(self.op_l))
-
-        nums = {}
-        for i in ord:
-            v = self.op_l[i]
-            nums[v.orig] = i
-            v.print_op(nums)
-

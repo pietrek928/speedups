@@ -1,21 +1,21 @@
-from collections import defaultdict
-from typing import Dict, Iterable, List
+from itertools import chain
+from typing import Dict, Iterable, List, Set, Optional
 
 from optim import _proc
 
-from gnode import OpNode, ConstNode, StoreNode, LoadNode, CvtNode, GNode, OpDescr
-from graph import ProgGraph
+from gnode import OpNode, ConstNode, StoreNode, LoadNode, CvtNode, GNode, OpDescr, VarNode, OpScope
+from graph import GraphOptim
 from utils import str_list
 from vtypes import VType
 
 
 class ScopeDescr:
     def __init__(self, exp_use: float):
-        self._exp_use = exp_use
-        self._nodes = []
+        self.exp_use = exp_use
+        self.nodes = []
 
     def append(self, v: 'GNode'):
-        self._nodes.append(v)
+        self.nodes.append(v)
 
 
 class FlowGraph:
@@ -39,7 +39,9 @@ class FlowGraph:
             self.ops[n] = OpDescr(n, op_id, ordered, out_t)
         self._op_idx: Dict[str, GNode] = {}
         self._proc: _proc = p
-        self._scope_stack: List[ScopeDescr] = []
+        self._scope_stack: List[ScopeDescr] = [
+            ScopeDescr(1.0)
+        ]
 
     def find_op(self, n: str, a: Iterable[GNode]):
         t = str_list(v.type for v in a)
@@ -123,12 +125,17 @@ class FlowGraph:
             ConstNode(self, t, v)
         )
 
+    def var(self, t: VType, name: str):
+        return self._add_n(
+            VarNode(self, t, name)
+        )
+
     def zero(self, t: VType):
         return self._add_n(
             OpNode(self, 'zeroY{}'.format(t), ())
         )
 
-    def select_used(self):
+    def select_used(self) -> Set[int]:
         stack = {}
         used = set()
 
@@ -136,70 +143,63 @@ class FlowGraph:
             if v.type is None:
                 stack[v.orig] = v
 
-        used_items = []
         while stack:
             o, v = stack.popitem()
             used.add(o)
 
-            used_items.append(v)
             for nv in v.a:
                 if nv.orig not in used:
                     stack[nv.orig] = nv
 
-        return used_items
+        return used
+
+    def optim_graph(self):
+        ordered = []
+        op_scopes = []
+        used = self.select_used()
+        for scope in self._scope_stack:
+            scope_used = [
+                v for v in scope.nodes
+                if v.orig in used
+            ]
+            op_scopes.append(
+                OpScope(
+                    start_pos=len(ordered),
+                    end_pos=len(ordered) + len(scope_used),
+                    exp_use=scope.exp_use
+                )
+            )
+            ordered.extend(scope_used)
+
+        return GraphOptim(self._proc, ordered, op_scopes)
 
     def used_ordered(self):
-        g_rev = defaultdict(lambda: [])
-        cnt = {}
-
         used = self.select_used()
-        for v in used:
-            cnt[v.orig] = len(v.a)
-            for nv in v.a:
-                g_rev[nv.orig].append(v)
-
-        stack = []
-        for v in used:
-            if not cnt[v.orig]:
-                stack.append(v)
-
-        n = 1
-        ordered = []
-        while stack:
-            v = stack.pop()
-            ordered.append(v)
-            n += 1
-            for nv in g_rev[v.orig]:
-                cnt[nv.orig] -= 1
-                if not cnt[nv.orig]:
-                    stack.append(nv)
-
-        return ProgGraph(self._proc, ordered)
+        return tuple(
+            v for v in
+            chain(*(
+                scope.nodes for scope in self._scope_stack
+            ))
+            if v.orig in used
+        )
 
     def print_graph(self):
-        g_rev = defaultdict(lambda: [])
-        cnt = {}
-
-        used = self.select_used()
-        for v in used:
-            cnt[v.orig] = len(v.a)
-            for nv in v.a:
-                g_rev[nv.orig].append(v)
-
-        stack = []
-        for v in used:
-            if not cnt[v.orig]:
-                stack.append(v)
-
         nums = {}
-        n = 1
-        while stack:
-            v = stack.pop()
+        n = 0
+        for v in self.used_ordered():
             n += 1
             nums[v.orig] = n
-            for nv in g_rev[v.orig]:
-                cnt[nv.orig] -= 1
-                if not cnt[nv.orig]:
-                    stack.append(nv)
             print('{}: {} {}'.format(
                 n, v.key, ' '.join(str(nums[nv.orig]) for nv in v.a)))
+
+    def gen_code(self, ord: Optional[Iterable[int]] = None):
+        nodes = self.used_ordered()
+
+        if ord is None:
+            ord = range(len(nodes))
+
+        nums = {}
+        for i in ord:
+            v = nodes[i]
+            nums[v.orig] = i
+            v.print_op(nums)

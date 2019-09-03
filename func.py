@@ -1,5 +1,7 @@
+from itertools import chain
 from typing import NamedTuple, Dict
 
+from proc_ctx import proc_ctx
 from vtypes import VType, bool_, int32_
 
 
@@ -13,16 +15,16 @@ def _is_var(v):
     return isinstance(v, str)
 
 
+func_reg = {}
+
+
 class Func:
     _consts = ()
 
-    def __init__(self, name, opts):
+    def __init__(self, name=None, **opts):
         self._name = name
-        self._opts = dict(opts)
+        self._opts = opts
         self._args: Dict[str, FuncArg] = {}
-        # self._is_decor = True
-        # self._it_num = 0
-        # self._stack = []
 
     def _print(self, l):
         print(l)
@@ -47,17 +49,25 @@ class Func:
     def get_name(self, opts):
         return '{}_{}'.format(
             self._name,
-            '_'.join(
-                '{}x{}'.format(k, v) for k, v in sorted(
+            '_'.join(chain(
+                ('{}x{}'.format(k, v) for k, v in sorted(
                     self.get_consts(opts).items()
-                )
-            )
+                )),
+                ('F{}'.format(proc_ctx.arch), )
+            ))
         )
 
     def gen_body(self, opts):
+        self._graph = proc_ctx.new_graph()
+        self._func(**opts, ctx=self)
+        self._graph.gen_code()
+
+    def analyze(self, opts):
+        self._graph = proc_ctx.new_graph()
         self._func(**opts, ctx=self)
 
     def gen(self, opts):
+        self.analyze(opts)
         self._print('void {}({}) {{'.format(
             self.get_name(opts),
             ', '.join('{} {}'.format(arg.type, arg.name) for arg in self.var_args)
@@ -87,16 +97,16 @@ class Func:
                     const=True,
                     type=t
                 )
-            r = p.const(t, self._opts[name])
+            try:
+                r = self._graph.const(t, self._opts[name])
+            except KeyError:
+                raise ValueError('Value for {} was not provided to {}'.format(name, self._name))
         else:
-            r = p.var(t, name)
+            r = self._graph.var(t, name)
 
         self._args[name] = a
 
-        try:
-            return r
-        except KeyError:
-            raise ValueError('Value for {} was not provided to {}'.format(name, self._name))
+        return r
 
     # def loop(self, start, step, size):
     #     vname = 'it' + str(self._it_num)
@@ -155,7 +165,9 @@ class Func:
 
     def __call__(self, *args, **kwargs):
         if not kwargs and len(args) == 1 and callable(args[0]):
-            self._func = args[0]
+            self._func = args[0]  # TODO: copy ?
+            if self._name is None:
+                self._name = self._func.__name__
             return self
         else:
             assert not args
@@ -206,3 +218,7 @@ class CUDAFunc(Func):
     def gen(self, opts):
         self._print('__global__')
         super().gen(opts)
+
+    # def call(self, x=, y=, z=, **opts):
+
+

@@ -175,7 +175,7 @@ class prog {
 
         inline auto clamp_pos(int pos) {
             if (start_pos > pos) {
-                return start_pos
+                return start_pos;
             }
             if (end_pos < pos) {
                 return end_pos;
@@ -197,21 +197,26 @@ class prog {
 
     public:
 
-    prog(py::object p, py::object nops_list, py::object Gpy)
+    prog(py::object p, py::object nops_list, py::object Gpy, py::object op_scopes)
         : p(py::extract<proc_descr&>(p)), p_ref(p), left(py::len(nops_list)), state(this->p, left.size()) {
         auto n = left.size();
         ops.resize(n);
         G_rev.resize(n);
 
+        int scope_n = 0;
+        auto cur_scope = op_scopes[scope_n++];
+
         for (long i=0; i<n; i++) {
+            while (py::extract<int>(cur_scope.attr("end_pos")) < i) {
+                cur_scope = op_scopes[scope_n++];
+            }
             auto &cur_op = ops[i];
-            auto &cur_obj = nops_list[i];
             cur_op.op = (this->p).get_op(
-                py::extract<int>(cur_obj.attr("nop"))
+                py::extract<int>(nops_list[i])
             );
-            cur_op.start_pos = py::extract<int>(cur_obj.attr("start_pos"));
-            cur_op.end_pos = py::extract<int>(cur_obj.attr("end_pos"));
-            cur_op.exp_use = py::extract<float>(exp_use.attr("exp_use"));
+            cur_op.start_pos = py::extract<int>(cur_scope.attr("start_pos"));
+            cur_op.end_pos = py::extract<int>(cur_scope.attr("end_pos"));
+            cur_op.exp_use = py::extract<float>(cur_scope.attr("exp_use"));
         }
 
         for (long i=0; i<n; i++) {
@@ -280,7 +285,7 @@ class prog {
         }
 
         while (!node_queue.empty()) {
-            auto v = node_queue.top().second; q.pop();
+            auto v = node_queue.top().second; node_queue.pop();
             order[v] = --o;
             for (auto i : G[v]) {
                 left[i] --;
