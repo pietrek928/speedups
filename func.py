@@ -1,7 +1,8 @@
 from itertools import chain
-from typing import NamedTuple, Dict
+from typing import NamedTuple, Dict, List, Any
 
-from proc_ctx import proc_ctx
+from gnode import GNode, LoadNode
+from proc_ctx import proc_ctx, new_graph, graph_ctx, vars_ctx, use_vars
 from vtypes import VType, bool_, int32_
 
 
@@ -9,10 +10,6 @@ class FuncArg(
     NamedTuple('func_param', (('name', str), ('const', bool), ('type', VType)))
 ):
     pass
-
-
-def _is_var(v):
-    return isinstance(v, str)
 
 
 func_reg = {}
@@ -35,47 +32,48 @@ class Func:
         )
 
     @property
-    def var_args(self):
+    def _var_args(self) -> List[FuncArg]:
         return sorted(
             a for a in self._args.values() if not a.const
         )
 
     @property
-    def const_args(self):
+    def _const_args(self) -> List[FuncArg]:
         return sorted(
             a for a in self._args.values() if a.const
         )
 
-    def get_name(self, opts):
+    def _get_name(self) -> str:
         return '{}_{}'.format(
             self._name,
             '_'.join(chain(
                 ('{}x{}'.format(k, v) for k, v in sorted(
-                    self.get_consts(opts).items()
+                    self._get_consts().items()
                 )),
-                ('F{}'.format(proc_ctx.arch), )
+                ('F{}'.format(proc_ctx.arch),)
             ))
         )
 
-    def gen_body(self, opts):
-        self._graph = proc_ctx.new_graph()
-        self._func(**opts, ctx=self)
-        self._graph.gen_code()
+    def _gen_body(self):
+        with new_graph() as graph:
+            self._func(ctx=self)  # TODO: args by signature ?
+            graph.gen_code()
 
-    def analyze(self, opts):
-        self._graph = proc_ctx.new_graph()
-        self._func(**opts, ctx=self)
+    def _analyze(self):
+        with new_graph():
+            self._func(ctx=self)
 
     def gen(self, opts):
-        self.analyze(opts)
-        self._print('void {}({}) {{'.format(
-            self.get_name(opts),
-            ', '.join('{} {}'.format(arg.type, arg.name) for arg in self.var_args)
-        ))
-        self.gen_body(opts)
-        self._print('}')
+        with use_vars(**self._get_all_opts(opts)):
+            self._analyze()
+            self._print('void {}({}) {{'.format(
+                self._get_name(),
+                ', '.join('{} {}'.format(arg.type, arg.name) for arg in self._var_args)
+            ))
+            self._gen_body()
+            self._print('}')
 
-    def get_val(self, name, t, const=False, default=None):
+    def get_val(self, name, t, const=False, default=None) -> GNode:
         if name not in self._args:
             a = FuncArg(
                 name=name,
@@ -87,7 +85,7 @@ class Func:
             if a.type != t:
                 raise ValueError('Invalid type {} for {} having already type {}'.format(t, name, a.type))
 
-        if default is not None and name not in self._opts:
+        if default is not None:
             self._opts[name] = default  # TODO: copy obj ?
 
         if const:
@@ -97,12 +95,13 @@ class Func:
                     const=True,
                     type=t
                 )
-            try:
-                r = self._graph.const(t, self._opts[name])
-            except KeyError:
+            v = vars_ctx.get(name)
+            if v is not None:
+                r = graph_ctx.const(t, v)
+            else:
                 raise ValueError('Value for {} was not provided to {}'.format(name, self._name))
         else:
-            r = self._graph.var(t, name)
+            r = graph_ctx.var(t, name)
 
         self._args[name] = a
 
@@ -127,41 +126,42 @@ class Func:
     #     for l in self._stack.pop():
     #         self._print(l)
 
-    def format_call_args(self, args):
+    def _get_all_opts(self, args):
+        r = dict(self._opts)
+        r.update(args)
+        return r
+
+    def _format_call_args(self) -> str:
         call_args = []
-        for arg in self.var_args:
-            if arg.name in args:
-                v = args[arg.name]
-            else:
-                v = self._opts.get(arg.name)
+        for arg in self._var_args:
+            v = vars_ctx.get(arg.name)
             if v is None:
                 raise ValueError('You must provide {} to {}', arg.name, self._name)
-            call_args.append(str(v))
-        return ', '.join(call_args)
+            call_args.append(arg.type.format(v))
+        return ', '.join(str(v) for v in call_args)
 
-    def get_consts(self, args):
+    def _get_consts(self) -> Dict[str, Any]:
         consts = {}
-        for const in self.const_args:
-            if const.name in args:
-                v = args[const.name]
-            else:
-                v = self._opts.get(const.name)
+        for const in self._const_args:
+            v = vars_ctx.get(const.name)
             if v is None:
                 raise ValueError('You must provide {} to {}', const.name, self._name)
             consts[const.name] = const.type.format(v)
         return consts
 
-    def register(self, opts):
+    def _register(self):
         global func_reg
 
-        name = self.get_name(opts)
+        name = self._get_name()
         if name not in func_reg:
-            func_reg[name] = (self, self.get_consts(opts))
+            func_reg[name] = (self, self._get_consts())
 
     def call(self, **args):
-        self.register(args)
-        name = self.get_name(args)
-        self._print('{}({});'.format(name, self.format_call_args(args)))
+        with use_vars(**self._get_all_opts(args)):
+            self._analyze()
+            self._register()
+            name = self._get_name()
+            self._print('{}({});'.format(name, self._format_call_args()))
 
     def __call__(self, *args, **kwargs):
         if not kwargs and len(args) == 1 and callable(args[0]):
@@ -196,13 +196,16 @@ CLExt = CLExt_()
 
 
 class CLFunc(Func):
-    def get_dim(self, dn):
-        return self.get_val('__dim_' + dn, int32_)
+    def get_dim(self, dn: int) -> LoadNode:
+        return int32_.load('get_global_id({})'.format(dn))
+
+    def get_size(self, dn: int) -> LoadNode:
+        return int32_.load('get_global_size({})'.format(dn))
 
     def _print_exts(self, exts):
         for e in exts:
             self._print('#pragma OPENCL EXTENSION {} : {}'.format(
-                e.name, 'enabled' if self.get_val(e.name, bool_) else 'disabled'
+                e.name, 'enabled' if self.get_val(e.name, bool_, const=True) else 'disabled'
             ))
 
     def gen(self, opts):
@@ -212,13 +215,26 @@ class CLFunc(Func):
 
 
 class CUDAFunc(Func):
-    def get_dim(self, dn):
-        return self.get_val('__dim_' + dn, int32_)
+    DIM_NAMES = 'xyz'
+
+    def get_dim(self, dn) -> LoadNode:
+        dim_name = self.DIM_NAMES[dn]
+        return int32_.load(
+            'blockIdx.{} * blockDim.{} + threadIdx.{}'.format(
+                dim_name, dim_name, dim_name
+            )
+        )
+
+    def get_size(self, dn: int) -> LoadNode:
+        dim_name = self.DIM_NAMES[dn]
+        return int32_.load(
+            'blockDim.{} * blockIdx.{}'.format(
+                dim_name, dim_name
+            )
+        )
 
     def gen(self, opts):
         self._print('__global__')
         super().gen(opts)
 
     # def call(self, x=, y=, z=, **opts):
-
-

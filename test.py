@@ -1,4 +1,4 @@
-from func import Func
+from func import Func, func_reg
 from proc_ctx import proc
 from proc_descr import ProcDescr
 from vtypes import v4f, float_
@@ -12,6 +12,7 @@ pd = ProcDescr(
     ops=(
         ('loadXv4f', v4f, 7.0, (1, 2), True),
         ('storeYv4f', None, 7.0, (6, 1), True),
+        ('loadYfloat', float_, 7.0, (6, 1), True),
         ('storeYfloat', None, 7.0, (6, 1), True),
         ('constYfloat', float_, 2.0, (3,), True),
         ('mulYfloatXfloat', float_, 5.5, (5,), True),
@@ -26,16 +27,20 @@ pd = ProcDescr(
 )
 
 
-@Func(yo=1.0, elo=2.0)
+@Func(yo=1.0, elo=2.0, eloo=0.8)
 def ttest(ctx=None):
+    g = float_.load('ooooooo')
     a = ctx.get_val('yo', float_, const=False)
     b = ctx.get_val('elo', float_, const=True)
-    (a * b).store('&c')
+    c = ctx.get_val('eloo', float_, const=True)
+    (a * b * c * g).store('&c')
 
 
 with proc(pd):
-    ttest()
-    ttest.gen({})
+    ttest(elo=3.0, eloo=9.0)
+    ttest.gen(dict(elo=5.0))
+
+    print(func_reg)
 
 # ttest()
 

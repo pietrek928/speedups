@@ -1,13 +1,11 @@
-import threading
-from collections import namedtuple, defaultdict
+from collections import defaultdict
 from itertools import chain, product
-from typing import Iterable, Tuple, Mapping, NamedTuple, Dict, Callable, Any, List
+from typing import Iterable, Tuple, Mapping, NamedTuple, Dict, Callable, Any, List, Type
 
+from proc_ctx import graph_ctx
 from utils import muli, addi
 
-ctx = threading.local()
-
-Dimension = namedtuple('Dimension', ('n', 'size'))
+Dimension = NamedTuple('Dimension', (('n', int), ('size', int)))
 
 
 class VType:
@@ -17,13 +15,27 @@ class VType:
     def format(self, v):
         return str(v)
 
+    def load(self, val):
+        return graph_ctx.load(self, val)
+
     def __eq__(self, v):
         return self.name == v.name
 
     def __str__(self):
         return self.name
 
-    __repr__ = __str__
+    def __repr__(self):
+        return str(self)
+
+
+class ptr(VType):
+    name = 'ptr'
+
+    def __init__(self, t: VType):
+        self._t: VType = t
+
+    def __str__(self):
+        return '{}*'.format(self._t)
 
 
 OpDescr = NamedTuple('op_descr', (('name', str), ('op_id', int), ('ordered', int), ('out_t', VType)))
@@ -65,14 +77,6 @@ int32_ = int32__()
 float_ = float__()
 v4f = v4f_()
 v4x2f = v4x2f_()
-
-
-# class NodeType:
-#     def __init__(self, name):
-#         self.name = name
-#
-#     def __call__(self, *args, **kwargs):
-#         ctx.p.
 
 
 class CumDims(defaultdict):
