@@ -1,5 +1,5 @@
 def is_p2(n) -> bool:
-    return isinstance(n, int) and (n-1) & n == 0
+    return isinstance(n, int) and (n - 1) & n == 0
 
 
 def get_p2(n: int) -> int:
@@ -46,9 +46,21 @@ def modi(a, k):
     if k == 1:
         return 0
     if is_p2(k):
-        return '(({})&({}))'.format(a, k-1)
+        return '(({})&({}))'.format(a, k - 1)
     return '(({})%({}))'.format(a, k)
 
 
 def str_list(l):
     return tuple(str(v) for v in l)
+
+
+def format_nodes(nums, nodes):
+    return tuple(
+        'v{}'.format(nums[v.orig]) for v in nodes
+    )
+
+
+def flush_attrs(nodes):
+    return tuple(
+        v.flush_attr() for v in nodes
+    )

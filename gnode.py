@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 from copy import deepcopy, copy
-from typing import Tuple, Iterable, List, NamedTuple, Set
+from typing import Tuple, Iterable, List, NamedTuple, Set, Optional
 
-from utils import get_p2
+from utils import get_p2, format_nodes, str_list, flush_attrs
 from vtypes import VType, OpDescr
 
 attr_types = {
@@ -25,7 +25,7 @@ class GNode:
     def __init__(self, p, scope_n: int):
         self.p = p
         self.scope_n: int = scope_n
-        self.op: OpDescr = None
+        self.op: Optional[OpDescr] = None
         self.attr_stack: List[AttrGroup] = []
         self.num_attrs = set()
 
@@ -38,11 +38,13 @@ class GNode:
         return self.op.name
 
     def flush_attr(self) -> GNode:
-        self = self.copy()
-        for grp in self.attr_stack:
+        new_node = self.copy()
+        attr_stack = new_node.attr_stack
+        new_node.attr_stack = ()
+        for grp in attr_stack:
             for a in sorted(grp.attrs):
-                self = getattr(self, 'apply_' + a)()
-        return self
+                new_node = getattr(new_node, 'apply_' + a)()
+        return new_node
 
     def apply_notbit(self) -> GNode:
         return self.p.op('notbit', self)
@@ -137,6 +139,9 @@ class GNode:
 
         return self.gen_op('xor', self, v)
 
+    def nop(self):
+        return self.gen_op('nop', self)
+
     def shuf(self, v: GNode, *dshifts) -> Tuple[GNode, GNode]:
         n = ''
         for i, s in enumerate(dshifts):
@@ -180,22 +185,22 @@ class GNode:
             return self.gen_op('rothalfd{}p{}'.format(dn, p - dim_sz / 2), v_hlp, v)
 
     def setnot(self, a: str) -> GNode:
-        self = self.copy()
+        new_node = self.copy()
         type = attr_types[a]
 
-        if self.attr_stack and self.attr_stack[-1].type == type:
-            attrs = self.attr_stack[-1].attrs
+        if new_node.attr_stack and new_node.attr_stack[-1].type == type:
+            attrs = new_node.attr_stack[-1].attrs
             if a in attrs:
                 attrs.discard(a)
             else:
                 attrs.add(a)
         else:
-            self.attr_stack.append(AttrGroup(type, {a}))
+            new_node.attr_stack.append(AttrGroup(type, {a}))
 
-        while self.attr_stack and not self.attr_stack[-1].attrs:
-            self.attr_stack.pop()
+        while new_node.attr_stack and not new_node.attr_stack[-1].attrs:
+            new_node.attr_stack.pop()
 
-        return self
+        return new_node
 
     def __getattr__(self, a: str) -> bool:
         if a.startswith('_'):
@@ -205,7 +210,6 @@ class GNode:
         return a in self.attr_stack[-1].attrs
 
     def gen_op(self, n: str, *a: GNode) -> GNode:
-        a = [v.flush_attr() for v in a]
         return self.p.op(n, *a)
 
     def gen_zero(self) -> GNode:
@@ -256,11 +260,9 @@ class GNode:
     def print_op(self, nums):
         op_call = '{}({});'.format(
             self.op_name,
-            ', '.join([
-                          str(val) for val in self.val_args
-                      ] + [
-                          'v{}'.format(nums[v.orig]) for v in self.a
-                      ])
+            ', '.join(
+                str_list(self.val_args) + format_nodes(nums, self.a)
+            )
         )
         if self.type:
             print('{} v{} = {}'.format(self.type, nums[self.orig], op_call))
@@ -270,6 +272,7 @@ class GNode:
 
 class OpNode(GNode):
     def __init__(self, p, n: str, a: Iterable[GNode]):
+        a = flush_attrs(a)
         super().__init__(p, p.get_scope_n(*a))
         self.a: Tuple[GNode] = tuple(a)
         self.op = p.find_op(n, a)
@@ -277,6 +280,7 @@ class OpNode(GNode):
 
 class StoreNode(GNode):
     def __init__(self, p, v: GNode, val):
+        v = v.flush_attr()
         super().__init__(p, p.get_scope_n(v))
         self.a: Tuple[GNode] = (v,)
         self.op = p.find_store_op(v.type)
@@ -349,6 +353,25 @@ class LoadNode(GNode):
 
 class CvtNode(GNode):
     def __init__(self, p, v: GNode, t: VType):
+        v = v.flush_attr()
         super().__init__(p, p.get_scope_n(v))
         self.a = (v,)
         self.op = p.find_cvt_op(v, t)
+
+
+class CodeNode(GNode):
+    def __init__(self, p, code, a: Iterable[GNode]):
+        a = flush_attrs(a)
+        super().__init__(p, p.get_scope_n(*a))
+        self.a: Tuple[GNode] = tuple(a)
+        self.code = code
+
+    @property
+    def val_args(self):
+        return self.code,
+
+    @property
+    def key(self) -> str:
+        return self.code.format(*(
+            v.orig for v in self.a
+        ))

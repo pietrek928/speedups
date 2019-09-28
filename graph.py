@@ -1,6 +1,6 @@
 from typing import Iterable, List, Tuple, Any, Dict
 
-from optim import _prog
+import optim
 
 from gnode import GNode, OpScope
 
@@ -9,7 +9,7 @@ class GraphOptim:
     def __init__(self, p, op_l: Iterable[GNode], op_scopes: Iterable[OpScope]):
         self.p = p
         self.op_l: Tuple[GNode] = tuple(op_l)
-        self._prog = _prog(p, self.op_nums, self._simple_graph(), op_scopes)
+        self._prog = optim._prog(p, self.op_nums, self._simple_graph(), op_scopes)
 
     @property
     def op_nums(self):

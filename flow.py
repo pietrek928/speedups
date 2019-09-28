@@ -1,11 +1,11 @@
 from itertools import chain
-from typing import Dict, Iterable, List, Set, Optional
+from typing import Dict, Iterable, List, Set, Optional, Tuple, NamedTuple
 
-from optim import _proc
+import optim
 
-from gnode import OpNode, ConstNode, StoreNode, LoadNode, CvtNode, GNode, OpDescr, VarNode, OpScope
+from gnode import OpNode, ConstNode, StoreNode, LoadNode, CvtNode, GNode, OpDescr, VarNode, OpScope, CodeNode
 from graph import GraphOptim
-from utils import str_list
+from utils import str_list, format_nodes, flush_attrs
 from vtypes import VType
 
 
@@ -25,7 +25,7 @@ class FlowGraph:
             (o[3] for o in ops),
             tuple(m[2] for m in mem_levels)
         ))
-        p = _proc(len(ports))
+        p = optim._proc(len(ports))
         port2n = dict(zip(*reversed(list(zip(*enumerate(ports))))))
         for n, size, port, load_time in mem_levels:
             p.new_mem_level(
@@ -38,10 +38,11 @@ class FlowGraph:
             )
             self.ops[n] = OpDescr(n, op_id, ordered, out_t)
         self._op_idx: Dict[str, GNode] = {}
-        self._proc: _proc = p
-        self._scope_stack: List[ScopeDescr] = [
-            ScopeDescr(1.0)
-        ]
+        self._proc: optim._proc = p
+        self._use_stack = [1.0]
+        self._scope_list = []
+
+        self.new_scope()
 
     def find_op(self, n: str, a: Iterable[GNode]):
         t = str_list(v.type for v in a)
@@ -77,18 +78,23 @@ class FlowGraph:
             return self._op_idx[k].copy()
         else:
             self._op_idx[k] = v
-            self._scope_stack[v.scope_n].append(v)
+            self._scope_list[v.scope_n].append(v)
             return v
 
-    def new_scope(self, exp_use):
-        self._scope_stack.append(
+    def start_use_block(self, exp_use):
+        self._use_stack.append(self._use_stack[-1] * exp_use)
+        self.new_scope()
+
+    def end_use_block(self):
+        self._use_stack.pop()
+        self.new_scope()
+
+    def new_scope(self):
+        self._scope_list.append(
             ScopeDescr(
-                exp_use=exp_use
+                exp_use=self._use_stack[-1]
             )
         )
-
-    # def end_scope(self):
-    #     self._scope_stack.pop()
 
     def get_scope_n(self, *a: GNode) -> int:
         scopes = tuple(
@@ -97,7 +103,7 @@ class FlowGraph:
         try:
             return max(scopes)
         except ValueError:
-            return len(self._scope_stack) - 1
+            return len(self._scope_list) - 1
 
     def op(self, n, *a: GNode):
         return self._add_n(
@@ -135,6 +141,13 @@ class FlowGraph:
             OpNode(self, 'zeroY{}'.format(t), ())
         )
 
+    def stationary_code(self, code: str, *a: GNode):
+        if self._scope_list[-1].nodes:
+            self.new_scope()
+        return self._add_n(
+            CodeNode(self, code, a)
+        )
+
     def select_used(self) -> Set[int]:
         stack = {}
         used = set()
@@ -157,7 +170,7 @@ class FlowGraph:
         ordered = []
         op_scopes = []
         used = self.select_used()
-        for scope in self._scope_stack:
+        for scope in self._scope_list:
             scope_used = [
                 v for v in scope.nodes
                 if v.orig in used
@@ -178,7 +191,7 @@ class FlowGraph:
         return tuple(
             v for v in
             chain(*(
-                scope.nodes for scope in self._scope_stack
+                scope.nodes for scope in self._scope_list
             ))
             if v.orig in used
         )
@@ -190,7 +203,8 @@ class FlowGraph:
             n += 1
             nums[v.orig] = n
             print('{}: {} {}'.format(
-                n, v.key, ' '.join(str(nums[nv.orig]) for nv in v.a)))
+                n, v.key, ' '.join(format_nodes(nums, v.a))
+            ))
 
     def gen_code(self, ord: Optional[Iterable[int]] = None):
         nodes = self.used_ordered()
@@ -203,3 +217,4 @@ class FlowGraph:
             v = nodes[i]
             nums[v.orig] = i
             v.print_op(nums)
+            # !!!!!!!!

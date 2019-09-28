@@ -1,6 +1,6 @@
 from collections import defaultdict
 from itertools import chain, product
-from typing import Iterable, Tuple, Mapping, NamedTuple, Dict, Callable, Any, List, Type
+from typing import Iterable, Tuple, Mapping, NamedTuple, Dict, Callable, Any, List
 
 from proc_ctx import graph_ctx
 from utils import muli, addi
@@ -371,7 +371,7 @@ class RegArray(ArrayDescr):
 
         return r
 
-    def block_iterate(self, block_dims: CumDims):
+    def block_iterate(self, block_dims: CumDims):  # TODO: shift order ?
         block_items = block_dims.poss()
         for block_start in (self.ddims - block_dims).poss():  # !!!!!!!!
             vdims, poss = block_start.poss_array()
