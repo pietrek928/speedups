@@ -54,9 +54,9 @@ def str_list(l):
     return tuple(str(v) for v in l)
 
 
-def format_nodes(nums, nodes):
+def format_nodes(mapper, nodes):
     return tuple(
-        'v{}'.format(nums[v.orig]) for v in nodes
+        'v{}'.format(mapper(v)) for v in nodes
     )
 
 

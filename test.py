@@ -1,4 +1,5 @@
 from func import Func, func_reg
+from loop import Loop
 from proc_ctx import proc
 from proc_descr import ProcDescr
 from vtypes import v4f, float_
@@ -14,8 +15,10 @@ pd = ProcDescr(
         ('storeYv4f', None, 7.0, (6, 1), True),
         ('loadYfloat', float_, 7.0, (6, 1), True),
         ('storeYfloat', None, 7.0, (6, 1), True),
+        ('nopYfloat', float_, 0.0, (6, 1), True),
         ('constYfloat', float_, 2.0, (3,), True),
         ('mulYfloatXfloat', float_, 5.5, (5,), True),
+        ('addYfloatXfloat', float_, 5.5, (4,), True),
         ('loadYv4f', v4f, 7.0, (3,), True),
         ('addYv4fXv4f', v4f, 3.5, (3, 4), True),
         ('subYv4fXv4f', v4f, 3.0, (3, 4), True),
@@ -33,7 +36,13 @@ def ttest(ctx=None):
     a = ctx.get_val('yo', float_, const=False)
     b = ctx.get_val('elo', float_, const=True)
     c = ctx.get_val('eloo', float_, const=True)
-    (a * b * c * g).store('&c')
+    with Loop(
+        start_ptr=float_.load('start'),
+        end_ptr=float_.load('end'),
+        shift_len=float_.load('shift')
+    ) as it:
+        it.store('&d')
+        (a * b * c * g).store('&c')
 
 
 with proc(pd):

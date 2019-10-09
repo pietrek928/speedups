@@ -176,7 +176,7 @@ class GNode:
             return self.copy()
         if p == dim_sz:
             return v.copy()
-        v_hlp = self.gen_op('movehalf1h2l{}'.format(dn), self, v)
+        v_hlp = self.gen_op('mvhalf1h2l{}'.format(dn), self, v)
         if p == dim_sz // 2:
             return v_hlp
         if p < dim_sz // 2:
@@ -236,6 +236,12 @@ class GNode:
         r.num_attrs = deepcopy(self.num_attrs)
         return r
 
+    def reset_orig(self):
+        r = self.copy()
+        r._orig = id(r)
+        self.p.add_alias(self, r)
+        return r
+
     def issame(self, v: GNode) -> GNode:
         return (
                 self.orig == v.orig
@@ -257,15 +263,15 @@ class GNode:
                 'X'.join(sorted(str(o.orig) for o in self.a))
             )
 
-    def print_op(self, nums):
+    def print_op(self, mapper):
         op_call = '{}({});'.format(
             self.op_name,
             ', '.join(
-                str_list(self.val_args) + format_nodes(nums, self.a)
+                str_list(self.val_args) + format_nodes(mapper, self.a)
             )
         )
         if self.type:
-            print('{} v{} = {}'.format(self.type, nums[self.orig], op_call))
+            print('{} v{} = {}'.format(self.type, mapper(self), op_call))
         else:
             print(op_call)
 
@@ -317,7 +323,7 @@ class VarNode(GNode):
     def key(self) -> str:
         return '{}Z{}'.format(self.name, self.val)
 
-    def print_op(self, nums):
+    def print_op(self, mapper):
         pass
 
 
@@ -367,6 +373,10 @@ class CodeNode(GNode):
         self.code = code
 
     @property
+    def type(self):
+        return None
+
+    @property
     def val_args(self):
         return self.code,
 
@@ -374,4 +384,9 @@ class CodeNode(GNode):
     def key(self) -> str:
         return self.code.format(*(
             v.orig for v in self.a
-        ))
+        ))  # TODO: more unique ?
+
+    def print_op(self, mapper):
+        print(
+            self.code.format(*format_nodes(mapper, self.a))
+        )
