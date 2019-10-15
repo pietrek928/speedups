@@ -1,5 +1,9 @@
+from itertools import chain
+from typing import Iterable
+
 from gnode import GNode
 from proc_ctx import graph_ctx
+from vtypes import MemArray, Dimension
 
 
 class Loop:
@@ -40,3 +44,23 @@ class Loop:
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.close()
+
+
+class ArraysLoop:
+    def __init__(self, arrs: Iterable[MemArray], dim_order: Iterable[Dimension]):
+        self._arrs = tuple(arrs)
+        self._dim_order = tuple(dim_order)
+
+        adims = tuple(
+            a.ddims for a in self._arrs
+        )
+        dim_ns = set(chain(*(
+            a.ddims.keys() for a in self._arrs
+        )))
+        for dim in dim_ns:
+            vs = set(
+                dd[dim] for dd in adims
+                if dd[dim] > 1
+            )
+            if len(vs) > 1:
+                raise ValueError(f'Insufficient values {vs} for dimension {dim}')

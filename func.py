@@ -101,7 +101,7 @@ class Func:
             else:
                 raise ValueError('Value for {} was not provided to {}'.format(name, self._name))
         else:
-            r = graph_ctx.var(t, name)
+            r = graph_ctx.var(t, name, start_scope=True)
 
         self._args[name] = a
 

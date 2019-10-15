@@ -41,8 +41,13 @@ def ttest(ctx=None):
         end_ptr=float_.load('end'),
         shift_len=float_.load('shift')
     ) as it:
-        it.store('&d')
-        (a * b * c * g).store('&c')
+        with Loop(
+                start_ptr=it,
+                end_ptr=float_.load('end2'),
+                shift_len=float_.load('shift2')
+        ) as it2:
+            it2.store('&d')
+            (a * b * c * g).store('&c')
 
 
 with proc(pd):

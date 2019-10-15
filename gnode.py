@@ -3,7 +3,7 @@ from __future__ import annotations
 from copy import deepcopy, copy
 from typing import Tuple, Iterable, List, NamedTuple, Set, Optional
 
-from utils import get_p2, format_nodes, str_list, flush_attrs
+from utils import get_p2, str_list, flush_attrs
 from vtypes import VType, OpDescr
 
 attr_types = {
@@ -21,6 +21,7 @@ OpScope = NamedTuple('OpScope', (('start_pos', int), ('end_pos', int), ('exp_use
 class GNode:
     a = ()
     val_args = ()
+    var_name = None
 
     def __init__(self, p, scope_n: int):
         self.p = p
@@ -267,11 +268,11 @@ class GNode:
         op_call = '{}({});'.format(
             self.op_name,
             ', '.join(
-                str_list(self.val_args) + format_nodes(mapper, self.a)
+                str_list(self.val_args) + tuple(map(mapper, self.a))
             )
         )
         if self.type:
-            print('{} v{} = {}'.format(self.type, mapper(self), op_call))
+            print('{} {} = {}'.format(self.type, mapper(self), op_call))
         else:
             print(op_call)
 
@@ -302,26 +303,18 @@ class StoreNode(GNode):
 
 
 class VarNode(GNode):
-    def __init__(self, p, t: VType, name: str):
+    def __init__(self, p, t: VType, var_name: str):
         super().__init__(p, p.get_scope_n())
         self.t = t
-        self.name = name
+        self.var_name = var_name
 
     @property
     def type(self):
         return self.t
 
     @property
-    def op_name(self):
-        return str(self.t)
-
-    @property
-    def val_args(self):
-        return self.name,
-
-    @property
     def key(self) -> str:
-        return '{}Z{}'.format(self.name, self.val)
+        return '{}Z{}'.format(self.var_name, self.t)
 
     def print_op(self, mapper):
         pass
@@ -380,13 +373,11 @@ class CodeNode(GNode):
     def val_args(self):
         return self.code,
 
-    @property
+    @property  # do not remove duplicates for code
     def key(self) -> str:
-        return self.code.format(*(
-            v.orig for v in self.a
-        ))  # TODO: more unique ?
+        return str(self.orig)
 
     def print_op(self, mapper):
         print(
-            self.code.format(*format_nodes(mapper, self.a))
+            self.code.format(*map(mapper, self.a))
         )

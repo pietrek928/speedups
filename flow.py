@@ -5,7 +5,7 @@ import optim
 
 from gnode import OpNode, ConstNode, StoreNode, LoadNode, CvtNode, GNode, OpDescr, VarNode, OpScope, CodeNode
 from graph import GraphOptim
-from utils import str_list, format_nodes
+from utils import str_list
 from vtypes import VType
 
 
@@ -24,9 +24,11 @@ class NodeMapper:
         self._d = {}
         self._n = 0
 
-    def set(self, v):
-        self._d[v.orig] = self._n
-        self._n += 1
+    def set(self, v, n: str = None):
+        if not n:
+            n = f'v{self._n}'
+            self._n += 1
+        self._d[v.orig] = n
 
     def get(self, v):
         return self._d[self._alias_mapper(v).orig]
@@ -146,10 +148,11 @@ class FlowGraph:
             ConstNode(self, t, v)
         )
 
-    def var(self, t: VType, name: str):
-        return self._add_n(
-            VarNode(self, t, name)
-        )
+    def var(self, t: VType, name: str, start_scope=True):
+        v = VarNode(self, t, name)
+        if start_scope:
+            v.scope_n = 0
+        return self._add_n(v)
 
     def zero(self, t: VType):
         return self._add_n(
@@ -233,7 +236,7 @@ class FlowGraph:
         for v in self.used_ordered():
             nums.set(v)
             print('{}: {} {}'.format(
-                nums.get(v).orig, v.key, ' '.join(format_nodes(nums.get, v.a))
+                nums.get(v).orig, v.key, ' '.join(map(nums.get, v.a))
             ))
 
     def gen_code(self, ord: Optional[Iterable[int]] = None):
@@ -245,5 +248,5 @@ class FlowGraph:
         nums = self.node_mapper()
         for i in ord:
             v = nodes[i]
-            nums.set(v)
+            nums.set(v, v.var_name)
             v.print_op(nums.get)

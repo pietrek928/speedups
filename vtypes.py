@@ -5,7 +5,7 @@ from typing import Iterable, Tuple, Mapping, NamedTuple, Dict, Callable, Any, Li
 from proc_ctx import graph_ctx
 from utils import muli, addi
 
-Dimension = NamedTuple('Dimension', (('n', int), ('size', int)))
+Dimension = NamedTuple('Dimension', (('n', str), ('size', int)))
 
 
 class VType:

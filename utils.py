@@ -54,12 +54,6 @@ def str_list(l):
     return tuple(str(v) for v in l)
 
 
-def format_nodes(mapper, nodes):
-    return tuple(
-        'v{}'.format(mapper(v)) for v in nodes
-    )
-
-
 def flush_attrs(nodes):
     return tuple(
         v.flush_attr() for v in nodes
