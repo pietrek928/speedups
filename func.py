@@ -1,8 +1,7 @@
-from itertools import chain
-from typing import NamedTuple, Dict, List, Any
+from typing import NamedTuple, Dict, List, Any, Tuple
 
 from gnode import GNode, LoadNode
-from proc_ctx import proc_ctx, new_graph, graph_ctx, vars_ctx, use_vars
+from proc_ctx import proc_ctx, new_graph, graph_ctx, vars_ctx, use_vars, func_scope
 from vtypes import VType, bool_, int32_
 
 
@@ -13,6 +12,19 @@ class FuncArg(
 
 
 func_reg = {}
+
+
+def _format_obj(obj):
+    if isinstance(obj, dict):
+        return _format_obj(
+            tuple(obj.items())
+        )
+    elif isinstance(obj, (list, tuple)):
+        return 'I'.join(
+            sorted(map(_format_obj, obj))
+        )
+    else:
+        return str(obj)
 
 
 class Func:
@@ -44,36 +56,33 @@ class Func:
         )
 
     def _get_name(self) -> str:
-        return '{}_{}'.format(
-            self._name,
-            '_'.join(chain(
-                ('{}x{}'.format(k, v) for k, v in sorted(
-                    self._get_consts().items()
-                )),
-                ('F{}'.format(proc_ctx.arch),)
-            ))
-        )
+        return f'{self._name}_' \
+               f'{_format_obj(self._get_consts())}_' \
+               f'F{proc_ctx.arch}'
 
     def _gen_body(self):
         with new_graph() as graph:
-            self._func(ctx=self)  # TODO: args by signature ?
+            self._func()  # TODO: args by signature ?
             graph.gen_code()
 
     def _analyze(self):
         with new_graph():
-            self._func(ctx=self)
+            self._func()
 
     def gen(self, opts):
-        with use_vars(**self._get_all_opts(opts)):
-            self._analyze()
-            self._print('void {}({}) {{'.format(
-                self._get_name(),
-                ', '.join('{} {}'.format(arg.type, arg.name) for arg in self._var_args)
-            ))
-            self._gen_body()
-            self._print('}')
+        with func_scope(self):
+            with use_vars(**self._get_all_opts(opts)):
+                self._analyze()
 
-    def get_val(self, name, t, const=False, default=None) -> GNode:
+            with use_vars(**self._get_all_opts(opts)):
+                self._print('void {}({}) {{'.format(
+                    self._get_name(),
+                    ', '.join(f'{arg.type} {arg.name}' for arg in self._var_args)
+                ))
+                self._gen_body()
+                self._print('}')
+
+    def _lookup_var(self, name, t: VType, const=False, default=None) -> Tuple[FuncArg, Any]:
         if name not in self._args:
             a = FuncArg(
                 name=name,
@@ -83,10 +92,10 @@ class Func:
         else:
             a = self._args[name]
             if a.type != t:
-                raise ValueError('Invalid type {} for {} having already type {}'.format(t, name, a.type))
+                raise ValueError(f'Invalid type `{t}` for `{name}` having already type `{a.type}`')
 
         if default is not None:
-            self._opts[name] = default  # TODO: copy obj ?
+            self._opts[name] = t.format(default)  # TODO: copy obj ?
 
         if const:
             if not a.const:
@@ -95,36 +104,36 @@ class Func:
                     const=True,
                     type=t
                 )
-            v = vars_ctx.get(name)
+            v = vars_ctx.get(name)  # !!!!!!!!!
             if v is not None:
-                r = graph_ctx.const(t, v)
+                val = v
             else:
-                raise ValueError('Value for {} was not provided to {}'.format(name, self._name))
+                val = self._opts.get(name)
         else:
-            r = graph_ctx.var(t, name, start_scope=True)
+            val = a.name
+
+        if val is None:
+            raise ValueError(f'Value for `{name}` was not provided to `{self._name}`')
 
         self._args[name] = a
 
-        return r
+        return a, val
 
-    # def loop(self, start, step, size):
-    #     vname = 'it' + str(self._it_num)
-    #     self._it_num += 1
-    #
-    #     self._print('do {')
-    #     self._print('auto {} = ({});'.format(vname, start))
-    #     self._print('auto {}_end = {} + ({});'.format(vname, vname, size))
-    #
-    #     self._stack.append([
-    #         '{} += {};'.format(vname, step),
-    #         '}} while ({} < {}_end);'.format(vname, vname)
-    #     ])
-    #
-    #     return vname
-    #
-    # def loop_end(self):
-    #     for l in self._stack.pop():
-    #         self._print(l)
+    def get_var(self, name, t: VType, const=False, default=None) -> GNode:
+        a, val = self._lookup_var(name, t, const=const, default=default)
+
+        if a.const:
+            return graph_ctx.const(t, val)
+        else:
+            return graph_ctx.var(t, name, start_scope=True)
+
+    def const_val(self, name, t: VType, default=None):
+        a, val = self._lookup_var(name, t, const=True, default=default)
+
+        if not a.const:
+            raise ValueError(f'Variable {name} is not const')
+
+        return val
 
     def _get_all_opts(self, args):
         r = dict(self._opts)
@@ -156,19 +165,31 @@ class Func:
         if name not in func_reg:
             func_reg[name] = (self, self._get_consts())
 
-    def call(self, **args):
-        with use_vars(**self._get_all_opts(args)):
-            self._analyze()
-            self._register()
-            name = self._get_name()
-            self._print('{}({});'.format(name, self._format_call_args()))
+    def _check_registered(self):
+        global func_reg
+        return self._get_name() in func_reg
+
+    def call(self, **kwargs):
+        inline = kwargs.pop('inline', False)
+        with use_vars(**self._get_all_opts(kwargs)), func_scope(self):
+            if not self._check_registered():
+                self._analyze()
+                self._register()
+            if not inline:
+                name = self._get_name()
+                self._print(f'{name}({self._format_call_args()});')
+            else:
+                self._func()
+
+    def decor(self, f):  # TODO: copy object ?
+        self._func = f
+        if not self._name:
+            self._name = self._func.__name__
+        return self
 
     def __call__(self, *args, **kwargs):
         if not kwargs and len(args) == 1 and callable(args[0]):
-            self._func = args[0]  # TODO: copy ?
-            if self._name is None:
-                self._name = self._func.__name__
-            return self
+            return self.decor(args[0])
         else:
             assert not args
             return self.call(**kwargs)
@@ -205,7 +226,7 @@ class CLFunc(Func):
     def _print_exts(self, exts):
         for e in exts:
             self._print('#pragma OPENCL EXTENSION {} : {}'.format(
-                e.name, 'enabled' if self.get_val(e.name, bool_, const=True) else 'disabled'
+                e.name, 'enabled' if self.get_var(e.name, bool_, const=True) else 'disabled'
             ))
 
     def gen(self, opts):
@@ -236,5 +257,3 @@ class CUDAFunc(Func):
     def gen(self, opts):
         self._print('__global__')
         super().gen(opts)
-
-    # def call(self, x=, y=, z=, **opts):

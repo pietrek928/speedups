@@ -1,9 +1,10 @@
 from itertools import chain
 from typing import Iterable
 
+from array import MemArray, Dimension
+from func import Func
 from gnode import GNode
 from proc_ctx import graph_ctx
-from vtypes import MemArray, Dimension
 
 
 class Loop:
@@ -45,6 +46,14 @@ class Loop:
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.close()
 
+# class LoopFunc(Func):
+#     def __init__(self, **opts):
+#         super().__init__(**opts)
+#
+#     def decor(self, f):
+#         def wrapper(f=f):
+#             return f()
+
 
 class ArraysLoop:
     def __init__(self, arrs: Iterable[MemArray], dim_order: Iterable[Dimension]):
@@ -64,3 +73,5 @@ class ArraysLoop:
             )
             if len(vs) > 1:
                 raise ValueError(f'Insufficient values {vs} for dimension {dim}')
+
+    # def get_ranges(self):

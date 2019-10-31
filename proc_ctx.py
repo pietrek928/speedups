@@ -47,6 +47,7 @@ class VarsCtx(CtxVarProxy):
 
 proc_ctx = CtxVarProxy('proc_ctx')
 graph_ctx = CtxVarProxy('graph_ctx')
+func_ctx = CtxVarProxy('func_ctx')
 vars_ctx = VarsCtx('vars_ctx')
 
 
@@ -57,6 +58,15 @@ def proc(pd):
         yield pd
     finally:
         proc_ctx.reset(old)
+
+
+@contextmanager
+def func_scope(f):
+    old = func_ctx._set(f)
+    try:
+        yield f
+    finally:
+        func_ctx.reset(old)
 
 
 @contextmanager

@@ -30,12 +30,12 @@ pd = ProcDescr(
 )
 
 
-@Func(yo=1.0, elo=2.0, eloo=0.8)
-def ttest(ctx=None):
+@Func(yo=1.0, elo=2.0)
+def ttest():
     g = float_.load('ooooooo')
-    a = ctx.get_val('yo', float_, const=False)
-    b = ctx.get_val('elo', float_, const=True)
-    c = ctx.get_val('eloo', float_, const=True)
+    a = float_.var('yo', const=False)
+    b = float_.var('elo', const=True)
+    c = float_.var('eloo', const=True, default=0.8)
     with Loop(
         start_ptr=float_.load('start'),
         end_ptr=float_.load('end'),
