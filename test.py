@@ -1,8 +1,8 @@
 from func import Func, func_reg
-from loop import Loop
+from loop import LoopFunc
 from proc_ctx import proc
 from proc_descr import ProcDescr
-from vtypes import v4f, float_
+from vtypes import v4f, float_, int32_
 
 pd = ProcDescr(
     name='testproc',
@@ -21,37 +21,47 @@ pd = ProcDescr(
         ('addYfloatXfloat', float_, 5.5, (4,), True),
         ('loadYv4f', v4f, 7.0, (3,), True),
         ('addYv4fXv4f', v4f, 3.5, (3, 4), True),
-        ('subYv4fXv4f', v4f, 3.0, (3, 4), True),
+        ('subYv4fXv4f', v4f, 3.0, (3, 4), False),
         ('mulYv4fXv4f', v4f, 5.5, (5,), True),
         ('negYv4', v4f, 5.0, (5,), True),
         ('notbitYv4f', v4f, 5.0, (5,), True),
-        ('cvtYv4fXfloat', float_, 5.0, (7,), True)
+        ('cvtYv4fXfloat', float_, 5.0, (7,), True),
+
+        ('zeroYint32Y', int32_, 1.0, (4,), True),
+        ('constYint32', int32_, 1.0, (4,), True),
+        ('nopYint32', int32_, 0.0, (4,), True),
+        ('addYint32Xint32', int32_, 0.0, (4,), True)
     )
 )
 
 
+@LoopFunc(
+    loop_dims=(('y', 'y_sz'), ('z', 'z_sz'), ('x', 8), ('y', 8), ('z', 16)),
+    block_ddims=(('x', 2), ('y', 4), ('z', 8))
+)
 @Func(yo=1.0, elo=2.0)
 def ttest():
     g = float_.load('ooooooo')
     a = float_.var('yo', const=False)
     b = float_.var('elo', const=True)
     c = float_.var('eloo', const=True, default=0.8)
-    with Loop(
-        start_ptr=float_.load('start'),
-        end_ptr=float_.load('end'),
-        shift_len=float_.load('shift')
-    ) as it:
-        with Loop(
-                start_ptr=it,
-                end_ptr=float_.load('end2'),
-                shift_len=float_.load('shift2')
-        ) as it2:
-            it2.store('&d')
-            (a * b * c * g).store('&c')
+    (a * b * c * g).store('&c')
+    # with Loop(
+    #     start_val=float_.load('start'),
+    #     end_val=float_.load('end'),
+    #     shift_len=float_.load('shift')
+    # ) as it:
+    #     with Loop(
+    #             start_val=it,
+    #             end_val=float_.load('end2'),
+    #             shift_len=float_.load('shift2')
+    #     ) as it2:
+    #         it2.store('&d')
+    #         (a * b * c * g).store('&c')
 
 
 with proc(pd):
-    ttest(elo=3.0, eloo=9.0)
+    # ttest(elo=3.0, eloo=9.0, y_sz=12345, z_sz=67899)
     ttest.gen(dict(elo=5.0))
 
     print(func_reg)

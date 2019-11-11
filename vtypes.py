@@ -10,6 +10,12 @@ class VType:
     def format(self, v):
         return str(v)
 
+    def v(self, val):
+        return func_ctx.v(val, self)
+
+    def zero(self):
+        return graph_ctx.zero(self)
+
     def load(self, val):
         return graph_ctx.load(self, val)
 
@@ -70,8 +76,33 @@ class v4x2f_(VType):
     dims = (4, 2)
 
 
+def _format_cfg(obj):
+    if isinstance(obj, dict):
+        return _format_cfg(
+            tuple(obj.items())
+        )
+    elif isinstance(obj, (list, tuple)):
+        return 'I'.join(
+            sorted(map(_format_cfg, obj))
+        )
+    else:
+        return str(obj)
+
+
+class Tcfg_(VType):
+    name = 'cfg'
+
+    @property
+    def dims(self):
+        raise ValueError('cfg has no dimensions')
+
+    def format(self, v):
+        return _format_cfg(v)
+
+
 bool_ = bool__()
 int32_ = int32__()
 float_ = float__()
 v4f = v4f_()
 v4x2f = v4x2f_()
+Tcfg = Tcfg_()

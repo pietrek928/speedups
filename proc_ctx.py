@@ -2,6 +2,12 @@ from _contextvars import ContextVar
 from contextlib import contextmanager
 
 
+# from typing import Union
+#
+# import flow
+# import func
+
+
 class ProcCtx:
     def __init__(self, pd):
         self._pd = pd
@@ -35,6 +41,9 @@ class VarsCtx(CtxVarProxy):
         new_dict.update(**kwargs)
         return self._set(new_dict)
 
+    def reset_vars(self, **kwargs):
+        return self._set(kwargs)
+
     def get(self, n, default=None):
         return self._get().get(n, default)
 
@@ -45,6 +54,9 @@ class VarsCtx(CtxVarProxy):
         return self.get(n)
 
 
+# proc_ctx: Union[ProcCtx, CtxVarProxy] = CtxVarProxy('proc_ctx')
+# graph_ctx: Union['flow.FlowGraph', CtxVarProxy] = CtxVarProxy('graph_ctx')
+# func_ctx: Union['func.Func', CtxVarProxy] = CtxVarProxy('func_ctx')
 proc_ctx = CtxVarProxy('proc_ctx')
 graph_ctx = CtxVarProxy('graph_ctx')
 func_ctx = CtxVarProxy('func_ctx')
@@ -82,6 +94,15 @@ def new_graph():
 @contextmanager
 def use_vars(**kwargs):
     old = vars_ctx.set_vars(**kwargs)
+    try:
+        yield
+    finally:
+        vars_ctx.reset(old)
+
+
+@contextmanager
+def use_only_vars(**kwargs):
+    old = vars_ctx.reset_vars(**kwargs)
     try:
         yield
     finally:

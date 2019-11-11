@@ -3,7 +3,7 @@ from typing import Dict, Iterable, Set, Optional
 
 import optim
 
-from gnode import OpNode, ConstNode, StoreNode, LoadNode, CvtNode, GNode, OpDescr, VarNode, OpScope, CodeNode
+from gnode import OpNode, ConstNode, StoreNode, LoadNode, CvtNode, GNode, OpDescr, VarNode, OpScope, CodeNode, SepNode
 from graph import GraphOptim
 from utils import str_list
 from vtypes import VType
@@ -64,29 +64,29 @@ class FlowGraph:
     def find_op(self, n: str, a: Iterable[GNode]):
         t = str_list(v.type for v in a)
         try:
-            op_n = '{}Y{}'.format(n, 'X'.join(t))
+            op_n = f'{n}Y{"X".join(t)}'
             return self.ops[op_n]
         except KeyError:
-            op_n = '{}Y{}'.format(n, 'X'.join(sorted(t)))
+            op_n = f'{n}Y{"X".join(sorted(t))}'
             op = self.ops[op_n]
             if not op.ordered:
                 return op
             raise ValueError('Wrong argument order')
 
     def find_const_op(self, t: VType):
-        op_n = 'constY{}'.format(t)
+        op_n = f'constY{t}'
         return self.ops[op_n]
 
     def find_load_op(self, t: VType):
-        op_n = 'loadY{}'.format(t)
+        op_n = f'loadY{t}'
         return self.ops[op_n]
 
     def find_cvt_op(self, v: GNode, t: VType):
-        op_n = 'cvtY{}X{}'.format(v.type, t)
+        op_n = f'cvtY{v.type}X{t}'
         return self.ops[op_n]
 
     def find_store_op(self, t: VType):
-        op_n = 'storeY{}'.format(t)
+        op_n = f'storeY{t}'
         return self.ops[op_n]
 
     def _add_n(self, v: GNode):
@@ -159,19 +159,29 @@ class FlowGraph:
             OpNode(self, 'zeroY{}'.format(t), ())
         )
 
-    def bind_scope(self, v: GNode):
+    def bind_scope(self, v: GNode) -> GNode:
         vscoped = v.reset_orig()
         vscoped.scope_n = self.get_scope_n()
         return vscoped
 
-    def get_alias(self, v):
-        return self._orig_aliases.get(v.orig, v)
+    def sep(self, v: GNode):
+        return self._add_n(
+            SepNode(self, v)
+        )
 
-    def add_alias(self, oldv, newv):
+    def get_alias(self, v: GNode) -> GNode:
+        return self._orig_aliases.get(v.orig) or v
+
+    def add_alias(self, oldv: GNode, newv: GNode):
         self._orig_aliases[newv.orig] = self.get_alias(oldv)
 
     def node_mapper(self):
         return NodeMapper(self.get_alias)
+
+    def raw_code(self, code: str, *a: GNode):
+        return self._add_n(
+            CodeNode(self, code, a)
+        )
 
     def stationary_code(self, code: str, *a: GNode):
         self.new_scope()

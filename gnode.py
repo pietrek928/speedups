@@ -6,6 +6,15 @@ from typing import Tuple, Iterable, List, NamedTuple, Set, Optional
 from utils import get_p2, str_list, flush_attrs
 from vtypes import VType, OpDescr
 
+_orig_id = 1234
+
+
+def _next_orig() -> int:
+    global _orig_id
+    _orig_id += 1
+    return _orig_id
+
+
 attr_types = {
     'zero': 10,
     'one': 10,
@@ -29,6 +38,7 @@ class GNode:
         self.op: Optional[OpDescr] = None
         self.attr_stack: List[AttrGroup] = []
         self.num_attrs = set()
+        self.orig = _next_orig()
 
     @property
     def type(self) -> VType:
@@ -226,24 +236,19 @@ class GNode:
     def store(self, val):
         self.p.store(self, val)
 
-    @property
-    def orig(self):
-        return self.__dict__.get('_orig', id(self))
-
     def copy(self) -> GNode:
         r = copy(self)
-        r._orig = self.orig
         r.attr_stack = deepcopy(self.attr_stack)
         r.num_attrs = deepcopy(self.num_attrs)
         return r
 
     def reset_orig(self):
         r = self.copy()
-        r._orig = id(r)
+        r.orig = _next_orig()
         self.p.add_alias(self, r)
         return r
 
-    def issame(self, v: GNode) -> GNode:
+    def issame(self, v: GNode) -> bool:
         return (
                 self.orig == v.orig
                 and self.key == v.key
@@ -381,3 +386,20 @@ class CodeNode(GNode):
         print(
             self.code.format(*map(mapper, self.a))
         )
+
+
+class SepNode(GNode):
+    op_name = ''
+
+    def __init__(self, p, v: GNode):
+        v = v.flush_attr()
+        super().__init__(p, p.get_scope_n())
+        self.a: Tuple[GNode] = (v,)
+
+    @property
+    def type(self):
+        return self.a[0].type
+
+    @property  # do not remove duplicates
+    def key(self) -> str:
+        return str(self.orig)

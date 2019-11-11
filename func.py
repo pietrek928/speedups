@@ -1,7 +1,7 @@
 from typing import NamedTuple, Dict, List, Any, Tuple
 
 from gnode import GNode, LoadNode
-from proc_ctx import proc_ctx, new_graph, graph_ctx, vars_ctx, use_vars, func_scope
+from proc_ctx import proc_ctx, new_graph, graph_ctx, vars_ctx, use_vars, func_scope, use_only_vars
 from vtypes import VType, bool_, int32_
 
 
@@ -12,19 +12,6 @@ class FuncArg(
 
 
 func_reg = {}
-
-
-def _format_obj(obj):
-    if isinstance(obj, dict):
-        return _format_obj(
-            tuple(obj.items())
-        )
-    elif isinstance(obj, (list, tuple)):
-        return 'I'.join(
-            sorted(map(_format_obj, obj))
-        )
-    else:
-        return str(obj)
 
 
 class Func:
@@ -56,8 +43,11 @@ class Func:
         )
 
     def _get_name(self) -> str:
+        const_descr = 'X'.join(
+            f'{k}V{t.format(v)}' for k, t, v in self._get_consts()
+        ).replace('.', 'K')
         return f'{self._name}_' \
-               f'{_format_obj(self._get_consts())}_' \
+               f'{const_descr}_' \
                f'F{proc_ctx.arch}'
 
     def _gen_body(self):
@@ -71,10 +61,10 @@ class Func:
 
     def gen(self, opts):
         with func_scope(self):
-            with use_vars(**self._get_all_opts(opts)):
+            with use_only_vars(**self._get_all_opts(opts)):
                 self._analyze()
 
-            with use_vars(**self._get_all_opts(opts)):
+            with use_only_vars(**self._get_all_opts(opts)):
                 self._print('void {}({}) {{'.format(
                     self._get_name(),
                     ', '.join(f'{arg.type} {arg.name}' for arg in self._var_args)
@@ -119,6 +109,12 @@ class Func:
 
         return a, val
 
+    def v(self, v, t: VType):
+        if isinstance(v, str):
+            return self.get_var(v, t)
+        else:
+            return graph_ctx.const(t, v)
+
     def get_var(self, name, t: VType, const=False, default=None) -> GNode:
         a, val = self._lookup_var(name, t, const=const, default=default)
 
@@ -140,23 +136,28 @@ class Func:
         r.update(args)
         return r
 
-    def _format_call_args(self) -> str:
+    def _format_call_args(self) -> Tuple[str, List[GNode]]:
         call_args = []
+        arg_nodes = []
         for arg in self._var_args:
             v = vars_ctx.get(arg.name)
             if v is None:
-                raise ValueError('You must provide {} to {}', arg.name, self._name)
-            call_args.append(arg.type.format(v))
-        return ', '.join(str(v) for v in call_args)
+                raise ValueError(f'You must provide {arg.name} to {self._name}')
+            if isinstance(v, GNode):
+                call_args.append('{}')
+                arg_nodes.append(v)
+            else:
+                call_args.append(arg.type.format(v))
+        return ', '.join(str(v) for v in call_args), arg_nodes
 
-    def _get_consts(self) -> Dict[str, Any]:
-        consts = {}
+    def _get_consts(self) -> List[Tuple[str, VType, Any]]:
+        consts = []
         for const in self._const_args:
             v = vars_ctx.get(const.name)
             if v is None:
-                raise ValueError('You must provide {} to {}', const.name, self._name)
-            consts[const.name] = const.type.format(v)
-        return consts
+                raise ValueError(f'You must provide {const.name} to {self._name}')
+            consts.append((const.name, const.type, v))
+        return sorted(consts)
 
     def _register(self):
         global func_reg
@@ -171,14 +172,23 @@ class Func:
 
     def call(self, **kwargs):
         inline = kwargs.pop('inline', False)
-        with use_vars(**self._get_all_opts(kwargs)), func_scope(self):
-            if not self._check_registered():
-                self._analyze()
-                self._register()
-            if not inline:
-                name = self._get_name()
-                self._print(f'{name}({self._format_call_args()});')
-            else:
+        opts = self._get_all_opts(kwargs)  # TODO: auto pick vars
+        if not inline:
+            with func_scope(self):
+                with use_only_vars(**opts):
+                    registered = self._check_registered()
+                    if not registered:
+                        self._analyze()
+                if not registered:
+                    opts = self._get_all_opts(kwargs)
+                with use_only_vars(**opts):
+                    if not registered:
+                        self._register()
+                    name = self._get_name()
+                    args_fmt, arg_vars = self._format_call_args()
+                    graph_ctx.raw_code(f'{name}({args_fmt})', *arg_vars)
+        else:
+            with use_vars(**opts):
                 self._func()
 
     def decor(self, f):  # TODO: copy object ?

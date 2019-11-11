@@ -19,8 +19,16 @@ class CumDims(defaultdict):
             cum_dims[dim.n] *= dim.size
         return cum_dims
 
+    @staticmethod
+    def from_cfg(dims: Iterable[Tuple]) -> 'CumDims':
+        cum_dims = CumDims()
+        for dim in dims:
+            dim = Dimension(*dim)
+            cum_dims[dim.n] *= dim.size
+        return cum_dims
+
     def __mul__(self, d: 'CumDims'):
-        return CumPos(
+        return CumDims(
             (k, self[k] * d[k])
             for k in set(chain(self.keys(), d.keys()))
         )
