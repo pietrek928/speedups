@@ -1,6 +1,6 @@
 from typing import Tuple, NamedTuple
 
-from proc_ctx import graph_ctx, func_ctx
+from .proc_ctx import graph_ctx, func_ctx
 
 
 class VType:
@@ -19,10 +19,10 @@ class VType:
     def load(self, val):
         return graph_ctx.load(self, val)
 
-    def var(self, name, const=False, default=None):
+    def var(self, name: str, const=False, default=None):
         return func_ctx.get_var(name, self, const=const, default=default)
 
-    def __eq__(self, v):
+    def __eq__(self, v: 'VType'):
         return self.name == v.name
 
     def __str__(self):
@@ -39,7 +39,7 @@ class ptr(VType):
         self._t: VType = t
 
     def __str__(self):
-        return '{}*'.format(self._t)
+        return f'{self._t}*'
 
 
 OpDescr = NamedTuple('op_descr', (('name', str), ('op_id', int), ('ordered', int), ('out_t', VType)))
@@ -48,21 +48,21 @@ OpDescr = NamedTuple('op_descr', (('name', str), ('op_id', int), ('ordered', int
 class bool__(VType):
     name = 'bool'
 
-    def format(self, v):
+    def format(self, v) -> bool:
         return bool(v)
 
 
 class int32__(VType):
     name = 'int32'
 
-    def format(self, v):  # TODO: check range
+    def format(self, v) -> int:  # TODO: check range
         return int(v)
 
 
 class float__(VType):
     name = 'float'
 
-    def format(self, v):
+    def format(self, v) -> float:
         return float(v)
 
 
@@ -96,7 +96,7 @@ class Tcfg_(VType):
     def dims(self):
         raise ValueError('cfg has no dimensions')
 
-    def format(self, v):
+    def format(self, v) -> str:
         return _format_cfg(v)
 
 

@@ -1,8 +1,8 @@
-from func import Func, func_reg
-from loop import LoopFunc
-from proc_ctx import proc
-from proc_descr import ProcDescr
-from vtypes import v4f, float_, int32_
+from .func import Func, func_reg
+from .loop import LoopFunc
+from .proc_ctx import proc
+from .proc_descr import ProcDescr
+from .vtypes import v4f, float_, int32_
 
 pd = ProcDescr(
     name='testproc',

@@ -1,11 +1,11 @@
 from _contextvars import ContextVar
 from contextlib import contextmanager
 
+from typing import Union, TYPE_CHECKING
 
-# from typing import Union
-#
-# import flow
-# import func
+if TYPE_CHECKING:
+    from .flow import FlowGraph
+    from .func import Func
 
 
 class ProcCtx:
@@ -54,12 +54,9 @@ class VarsCtx(CtxVarProxy):
         return self.get(n)
 
 
-# proc_ctx: Union[ProcCtx, CtxVarProxy] = CtxVarProxy('proc_ctx')
-# graph_ctx: Union['flow.FlowGraph', CtxVarProxy] = CtxVarProxy('graph_ctx')
-# func_ctx: Union['func.Func', CtxVarProxy] = CtxVarProxy('func_ctx')
-proc_ctx = CtxVarProxy('proc_ctx')
-graph_ctx = CtxVarProxy('graph_ctx')
-func_ctx = CtxVarProxy('func_ctx')
+proc_ctx: Union[ProcCtx, CtxVarProxy] = CtxVarProxy('proc_ctx')
+graph_ctx: Union['FlowGraph', CtxVarProxy] = CtxVarProxy('graph_ctx')
+func_ctx: Union['Func', CtxVarProxy] = CtxVarProxy('func_ctx')
 vars_ctx = VarsCtx('vars_ctx')
 
 

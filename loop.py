@@ -1,11 +1,11 @@
 from itertools import chain
 from typing import Iterable
 
-from array import MemArray, Dimension, CumDims
-from func import Func
-from gnode import GNode
-from proc_ctx import graph_ctx, func_ctx
-from vtypes import int32_, Tcfg
+from .array import MemArray, Dimension, CumDims
+from .func import Func
+from .gnode import GNode
+from .proc_ctx import graph_ctx, func_ctx
+from .vtypes import int32_, Tcfg
 
 
 class Loop:
@@ -51,9 +51,6 @@ class Loop:
 
 
 class LoopFunc(Func):
-    def __init__(self, **opts):
-        super().__init__(**opts)
-
     def decor(self, f: Func):
         def wrapper(f: Func = f):
             loop_dims = func_ctx.const_val('loop_dims', Tcfg)
@@ -86,6 +83,17 @@ class LoopFunc(Func):
         return super().decor(wrapper)
 
 
+class GpuLoopFunc(Func):
+    def decor(self, f: Func):
+        def wrapper(f: Func = f):
+            loop_dims = func_ctx.const_val('loop_dims', Tcfg)
+            block_ddims = CumDims.from_cfg(
+                func_ctx.const_val('block_ddims', Tcfg)
+            )
+
+        return super().decor(wrapper)
+
+
 class ArraysLoop:
     def __init__(self, arrs: Iterable[MemArray], dim_order: Iterable[Dimension]):
         self._arrs = tuple(arrs)
@@ -106,5 +114,3 @@ class ArraysLoop:
                 raise ValueError(f'Insufficient values {vs} for dimension {dim}')
 
     # def get_ranges(self):
-
-# class GpuLoop:

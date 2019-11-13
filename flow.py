@@ -1,12 +1,12 @@
 from itertools import chain
 from typing import Dict, Iterable, Set, Optional
 
-import optim
+from . import optim
 
-from gnode import OpNode, ConstNode, StoreNode, LoadNode, CvtNode, GNode, OpDescr, VarNode, OpScope, CodeNode, SepNode
-from graph import GraphOptim
-from utils import str_list
-from vtypes import VType
+from .gnode import OpNode, ConstNode, StoreNode, LoadNode, CvtNode, GNode, OpDescr, VarNode, OpScope, CodeNode, SepNode
+from .graph import GraphOptim
+from .utils import str_list
+from .vtypes import VType
 
 
 class ScopeDescr:
@@ -24,13 +24,13 @@ class NodeMapper:
         self._d = {}
         self._n = 0
 
-    def set(self, v, n: str = None):
+    def set(self, v: GNode, n: str = None):
         if not n:
             n = f'v{self._n}'
             self._n += 1
         self._d[v.orig] = n
 
-    def get(self, v):
+    def get(self, v: GNode):
         return self._d[self._alias_mapper(v).orig]
 
 

@@ -2,8 +2,8 @@ from collections import defaultdict
 from itertools import chain, product
 from typing import Iterable, Tuple, Mapping, Dict, Callable, Any, List, NamedTuple
 
-from utils import muli, addi
-from vtypes import v4f, VType
+from .utils import muli, addi
+from .vtypes import v4f, VType
 
 Dimension = NamedTuple('Dimension', (('n', str), ('size', int)))
 
@@ -234,7 +234,7 @@ class ArrayDescr:
 class MemArray(ArrayDescr):
     def load(self, p, dims: Mapping[str, int], start=0):
         return self.vec_indexes(dims, start).map(
-            lambda i: p.load(v4f, i)  #  !!!!!!!!
+            lambda i: p.load(v4f, i)  # !!!!!!!!
         )
 
     def store(self, a: 'RegArray', start=0):

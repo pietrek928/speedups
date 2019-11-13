@@ -1,10 +1,14 @@
 from __future__ import annotations
 
 from copy import deepcopy, copy
-from typing import Tuple, Iterable, List, NamedTuple, Set, Optional
+from typing import Tuple, Iterable, List, NamedTuple, Set, Optional, TYPE_CHECKING
 
-from utils import get_p2, str_list, flush_attrs
-from vtypes import VType, OpDescr
+from .proc_ctx import func_ctx
+from .utils import get_p2, str_list, flush_attrs
+from .vtypes import VType, OpDescr
+
+if TYPE_CHECKING:
+    from .flow import FlowGraph
 
 _orig_id = 1234
 
@@ -32,8 +36,8 @@ class GNode:
     val_args = ()
     var_name = None
 
-    def __init__(self, p, scope_n: int):
-        self.p = p
+    def __init__(self, p: 'FlowGraph', scope_n: int):
+        self.p: 'FlowGraph' = p
         self.scope_n: int = scope_n
         self.op: Optional[OpDescr] = None
         self.attr_stack: List[AttrGroup] = []
@@ -277,13 +281,13 @@ class GNode:
             )
         )
         if self.type:
-            print('{} {} = {}'.format(self.type, mapper(self), op_call))
+            func_ctx._print('{} {} = {}'.format(self.type, mapper(self), op_call))
         else:
-            print(op_call)
+            func_ctx._print(op_call)
 
 
 class OpNode(GNode):
-    def __init__(self, p, n: str, a: Iterable[GNode]):
+    def __init__(self, p: 'FlowGraph', n: str, a: Iterable[GNode]):
         a = flush_attrs(a)
         super().__init__(p, p.get_scope_n(*a))
         self.a: Tuple[GNode] = tuple(a)

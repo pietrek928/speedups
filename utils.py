@@ -1,3 +1,9 @@
+from typing import Tuple, TYPE_CHECKING, Iterable
+
+if TYPE_CHECKING:
+    from .gnode import GNode
+
+
 def is_p2(n) -> bool:
     return isinstance(n, int) and (n - 1) & n == 0
 
@@ -54,7 +60,7 @@ def str_list(l):
     return tuple(str(v) for v in l)
 
 
-def flush_attrs(nodes):
+def flush_attrs(nodes: Iterable['GNode']) -> Tuple['GNode']:
     return tuple(
         v.flush_attr() for v in nodes
     )

@@ -1,6 +1,6 @@
 from typing import NamedTuple, Tuple, Optional
 
-from vtypes import VType
+from .vtypes import VType
 
 MemLevel = NamedTuple('MemLevel', (('name', str), ('size', int), ('port_n', int), ('load_time', float)))
 Op = NamedTuple('Op', (

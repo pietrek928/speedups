@@ -1,8 +1,8 @@
-from typing import NamedTuple, Dict, List, Any, Tuple
+from typing import NamedTuple, Dict, List, Any, Tuple, Iterable
 
-from gnode import GNode, LoadNode
-from proc_ctx import proc_ctx, new_graph, graph_ctx, vars_ctx, use_vars, func_scope, use_only_vars
-from vtypes import VType, bool_, int32_
+from .gnode import GNode, LoadNode
+from .proc_ctx import proc_ctx, new_graph, graph_ctx, vars_ctx, use_vars, func_scope, use_only_vars
+from .vtypes import VType, bool_, int32_
 
 
 class FuncArg(
@@ -136,10 +136,10 @@ class Func:
         r.update(args)
         return r
 
-    def _format_call_args(self) -> Tuple[str, List[GNode]]:
+    def _format_call_args(self, arg_list: Iterable[FuncArg]) -> Tuple[str, List[GNode]]:
         call_args = []
         arg_nodes = []
-        for arg in self._var_args:
+        for arg in arg_list:
             v = vars_ctx.get(arg.name)
             if v is None:
                 raise ValueError(f'You must provide {arg.name} to {self._name}')
@@ -170,6 +170,11 @@ class Func:
         global func_reg
         return self._get_name() in func_reg
 
+    def _gen_call(self):
+        name = self._get_name()
+        args_fmt, arg_vars = self._format_call_args(self._var_args)
+        graph_ctx.raw_code(f'{name}({args_fmt})', *arg_vars)
+
     def call(self, **kwargs):
         inline = kwargs.pop('inline', False)
         opts = self._get_all_opts(kwargs)  # TODO: auto pick vars
@@ -184,9 +189,7 @@ class Func:
                 with use_only_vars(**opts):
                     if not registered:
                         self._register()
-                    name = self._get_name()
-                    args_fmt, arg_vars = self._format_call_args()
-                    graph_ctx.raw_code(f'{name}({args_fmt})', *arg_vars)
+                    self._gen_call()
         else:
             with use_vars(**opts):
                 self._func()
@@ -216,6 +219,20 @@ class Func:
 #     }
 
 
+class GpuFunc(Func):
+    def call(self, **kwargs):
+        if kwargs.get('inline'):
+            raise ValueError('Cannot inline gpu function')
+        return super().call(**kwargs)
+
+    @property
+    def _dim_args(self):
+        return tuple(
+            FuncArg(name=f'size{dn}', const=False, type=int32_)
+            for dn in range(self._opts['ndims'])
+        )
+
+
 class CLExt_(VType):
     name = 'clext'
 
@@ -226,12 +243,12 @@ class CLExt_(VType):
 CLExt = CLExt_()
 
 
-class CLFunc(Func):
+class CLFunc(GpuFunc):
     def get_dim(self, dn: int) -> LoadNode:
-        return int32_.load('get_global_id({})'.format(dn))
+        return int32_.load(f'get_global_id({dn})')
 
     def get_size(self, dn: int) -> LoadNode:
-        return int32_.load('get_global_size({})'.format(dn))
+        return int32_.load(f'get_global_size({dn})')
 
     def _print_exts(self, exts):
         for e in exts:
@@ -245,18 +262,22 @@ class CLFunc(Func):
         super().gen(opts)
 
 
-class CUDAFunc(Func):
+class CUDAFunc(GpuFunc):
     DIM_NAMES = 'xyz'
 
-    def get_dim(self, dn) -> LoadNode:
-        dim_name = self.DIM_NAMES[dn]
-        return int32_.load(
-            'blockIdx.{} * blockDim.{} + threadIdx.{}'.format(
-                dim_name, dim_name, dim_name
-            )
-        )
+    def _block_id(self, dn: int) -> LoadNode:
+        return int32_.load(f'blockIdx.{self.DIM_NAMES[dn]}')
 
-    def get_size(self, dn: int) -> LoadNode:
+    def _block_dim(self, dn: int) -> LoadNode:
+        return int32_.load(f'blockDim.{self.DIM_NAMES[dn]}')
+
+    def _thread_id(self, dn: int) -> LoadNode:
+        return int32_.load(f'threadIdx.{self.DIM_NAMES[dn]}')
+
+    def get_dim_pos(self, dn: int) -> LoadNode:
+        return self._block_id(dn) * self._block_dim(dn) + self._thread_id(dn)
+
+    def get_size(self, dn: int) -> LoadNode:  # ???????
         dim_name = self.DIM_NAMES[dn]
         return int32_.load(
             'blockDim.{} * blockIdx.{}'.format(
@@ -267,3 +288,9 @@ class CUDAFunc(Func):
     def gen(self, opts):
         self._print('__global__')
         super().gen(opts)
+
+    def _gen_call(self):
+        name = self._get_name()
+        dims_fmt, dims_vars = self._format_call_args(self._dim_args)
+        args_fmt, arg_vars = self._format_call_args(self._var_args)
+        graph_ctx.raw_code(f'{name}<<<{dims_fmt}>>>({args_fmt})', *dims_vars, *arg_vars)
