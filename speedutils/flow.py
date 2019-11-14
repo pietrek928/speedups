@@ -86,7 +86,7 @@ class FlowGraph:
         return self.ops[op_n]
 
     def find_store_op(self, t: VType):
-        op_n = f'storeY{t}'
+        op_n = f'storY{t}'
         return self.ops[op_n]
 
     def _add_n(self, v: GNode):

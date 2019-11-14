@@ -64,17 +64,23 @@ class CUDAFunc(GpuFunc):
 
     def get_dim(self, dn: int) -> LoadNode:
         ndims = self.const_val('ndims', int32_)
-        if dn < ndims:
+        assert dn < ndims
+
+        nth = ndims // 2
+        if dn < nth:
             return self._thread_id(dn)
         else:
             return self._block_id(dn - ndims)  # TODO: mul ?????
 
     def get_size(self, dn: int) -> LoadNode:
         ndims = self.const_val('ndims', int32_)
-        if dn < ndims:
+        assert dn < ndims
+
+        nth = ndims // 2
+        if dn < nth:
             return self._block_dim(dn)
         else:
-            return self._grid_dim(dn - ndims)  # TODO: mul ?????
+            return self._grid_dim(dn - nth)  # TODO: mul ?????
 
     def gen(self, opts):
         self.codeln('__global__')
@@ -85,8 +91,8 @@ class CUDAFunc(GpuFunc):
         dim_args = self._dim_args
         args_fmt, arg_vars = self._format_call_args(self._var_args)
 
-        block_dims_fmt, block_dims_vars = self._format_call_args(dim_args[:len(dim_args) // 2])
         grid_dims_fmt, grid_dims_vars = self._format_call_args(dim_args[len(dim_args) // 2:])
+        block_dims_fmt, block_dims_vars = self._format_call_args(dim_args[:len(dim_args) // 2])
 
         graph_ctx.raw_code(
             f'{name}<<<dim3({grid_dims_fmt}),dim3({block_dims_fmt})>>>({args_fmt})',

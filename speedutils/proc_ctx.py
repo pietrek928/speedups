@@ -13,7 +13,7 @@ class ProcCtx:
         self._pd = pd
 
     def new_graph(self):
-        from flow import FlowGraph
+        from .flow import FlowGraph
         return FlowGraph(mem_levels=self._pd.mem_levels, ops=self._pd.ops)
 
     @property
