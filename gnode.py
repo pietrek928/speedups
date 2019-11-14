@@ -281,9 +281,9 @@ class GNode:
             )
         )
         if self.type:
-            func_ctx._print('{} {} = {}'.format(self.type, mapper(self), op_call))
+            func_ctx.codeln('{} {} = {}'.format(self.type, mapper(self), op_call))
         else:
-            func_ctx._print(op_call)
+            func_ctx.codeln(op_call)
 
 
 class OpNode(GNode):

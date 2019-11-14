@@ -1,6 +1,7 @@
+from gpu import CUDAFunc
 from .func import Func, func_reg
 from .loop import LoopFunc
-from .proc_ctx import proc
+from .proc_ctx import proc, func_ctx
 from .proc_descr import ProcDescr
 from .vtypes import v4f, float_, int32_
 
@@ -35,17 +36,17 @@ pd = ProcDescr(
 )
 
 
-@LoopFunc(
-    loop_dims=(('y', 'y_sz'), ('z', 'z_sz'), ('x', 8), ('y', 8), ('z', 16)),
-    block_ddims=(('x', 2), ('y', 4), ('z', 8))
-)
-@Func(yo=1.0, elo=2.0)
-def ttest():
-    g = float_.load('ooooooo')
-    a = float_.var('yo', const=False)
-    b = float_.var('elo', const=True)
-    c = float_.var('eloo', const=True, default=0.8)
-    (a * b * c * g).store('&c')
+# @LoopFunc(
+#     loop_dims=(('y', 'y_sz'), ('z', 'z_sz'), ('x', 8), ('y', 8), ('z', 16)),
+#     block_ddims=(('x', 2), ('y', 4), ('z', 8))
+# )
+# @Func(yo=1.0, elo=2.0)
+# def ttest():
+#     g = float_.load('ooooooo')
+#     a = float_.var('yo', const=False)
+#     b = float_.var('elo', const=True)
+#     c = float_.var('eloo', const=True, default=0.8)
+#     (a * b * c * g).store('&c')
     # with Loop(
     #     start_val=float_.load('start'),
     #     end_val=float_.load('end'),
@@ -59,10 +60,14 @@ def ttest():
     #         it2.store('&d')
     #         (a * b * c * g).store('&c')
 
+@CUDAFunc(yo=1.0, elo=2.0, ndims=2)
+def cuda_test():
+    (func_ctx.get_dim(0) * func_ctx.get_dim(1) * func_ctx.get_dim(2) * func_ctx.get_dim(3)).store('&aaa')
+
 
 with proc(pd):
     # ttest(elo=3.0, eloo=9.0, y_sz=12345, z_sz=67899)
-    ttest.gen(dict(elo=5.0))
+    # ttest.gen(dict(elo=5.0))
 
     print(func_reg)
 

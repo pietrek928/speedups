@@ -1,8 +1,8 @@
 from typing import NamedTuple, Dict, List, Any, Tuple, Iterable
 
-from .gnode import GNode, LoadNode
+from .gnode import GNode
 from .proc_ctx import proc_ctx, new_graph, graph_ctx, vars_ctx, use_vars, func_scope, use_only_vars
-from .vtypes import VType, bool_, int32_
+from .vtypes import VType
 
 
 class FuncArg(
@@ -22,7 +22,7 @@ class Func:
         self._opts = opts
         self._args: Dict[str, FuncArg] = {}
 
-    def _print(self, l):
+    def codeln(self, l):
         print(l)
 
     def _filter_arg_type(self, t: VType):
@@ -65,12 +65,12 @@ class Func:
                 self._analyze()
 
             with use_only_vars(**self._get_all_opts(opts)):
-                self._print('void {}({}) {{'.format(
+                self.codeln('void {}({}) {{'.format(
                     self._get_name(),
                     ', '.join(f'{arg.type} {arg.name}' for arg in self._var_args)
                 ))
                 self._gen_body()
-                self._print('}')
+                self.codeln('}')
 
     def _lookup_var(self, name, t: VType, const=False, default=None) -> Tuple[FuncArg, Any]:
         if name not in self._args:
@@ -207,7 +207,6 @@ class Func:
             assert not args
             return self.call(**kwargs)
 
-
 # class LoopFunc(Func):
 #     def gen_body(self, args):
 #         for v in self.get_arg('loop_dims')
@@ -217,80 +216,3 @@ class Func:
 #         n: args.get(n, args_descr[n].default)
 #         for n in args_descr.keys()
 #     }
-
-
-class GpuFunc(Func):
-    def call(self, **kwargs):
-        if kwargs.get('inline'):
-            raise ValueError('Cannot inline gpu function')
-        return super().call(**kwargs)
-
-    @property
-    def _dim_args(self):
-        return tuple(
-            FuncArg(name=f'size{dn}', const=False, type=int32_)
-            for dn in range(self._opts['ndims'])
-        )
-
-
-class CLExt_(VType):
-    name = 'clext'
-
-    def format(self, v):
-        return bool(v)
-
-
-CLExt = CLExt_()
-
-
-class CLFunc(GpuFunc):
-    def get_dim(self, dn: int) -> LoadNode:
-        return int32_.load(f'get_global_id({dn})')
-
-    def get_size(self, dn: int) -> LoadNode:
-        return int32_.load(f'get_global_size({dn})')
-
-    def _print_exts(self, exts):
-        for e in exts:
-            self._print('#pragma OPENCL EXTENSION {} : {}'.format(
-                e.name, 'enabled' if self.get_var(e.name, bool_, const=True) else 'disabled'
-            ))
-
-    def gen(self, opts):
-        self._print_exts(self._filter_arg_type(CLExt))
-        self._print('__kernel')
-        super().gen(opts)
-
-
-class CUDAFunc(GpuFunc):
-    DIM_NAMES = 'xyz'
-
-    def _block_id(self, dn: int) -> LoadNode:
-        return int32_.load(f'blockIdx.{self.DIM_NAMES[dn]}')
-
-    def _block_dim(self, dn: int) -> LoadNode:
-        return int32_.load(f'blockDim.{self.DIM_NAMES[dn]}')
-
-    def _thread_id(self, dn: int) -> LoadNode:
-        return int32_.load(f'threadIdx.{self.DIM_NAMES[dn]}')
-
-    def get_dim_pos(self, dn: int) -> LoadNode:
-        return self._block_id(dn) * self._block_dim(dn) + self._thread_id(dn)
-
-    def get_size(self, dn: int) -> LoadNode:  # ???????
-        dim_name = self.DIM_NAMES[dn]
-        return int32_.load(
-            'blockDim.{} * blockIdx.{}'.format(
-                dim_name, dim_name
-            )
-        )
-
-    def gen(self, opts):
-        self._print('__global__')
-        super().gen(opts)
-
-    def _gen_call(self):
-        name = self._get_name()
-        dims_fmt, dims_vars = self._format_call_args(self._dim_args)
-        args_fmt, arg_vars = self._format_call_args(self._var_args)
-        graph_ctx.raw_code(f'{name}<<<{dims_fmt}>>>({args_fmt})', *dims_vars, *arg_vars)
