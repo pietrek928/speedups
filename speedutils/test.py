@@ -1,6 +1,5 @@
-from gpu import CUDAFunc
-from .func import Func, func_reg
-from .loop import LoopFunc
+from .func import func_reg
+from .gpu import CUDAFunc
 from .proc_ctx import proc, func_ctx
 from .proc_descr import ProcDescr
 from .vtypes import v4f, float_, int32_
@@ -47,18 +46,18 @@ pd = ProcDescr(
 #     b = float_.var('elo', const=True)
 #     c = float_.var('eloo', const=True, default=0.8)
 #     (a * b * c * g).store('&c')
-    # with Loop(
-    #     start_val=float_.load('start'),
-    #     end_val=float_.load('end'),
-    #     shift_len=float_.load('shift')
-    # ) as it:
-    #     with Loop(
-    #             start_val=it,
-    #             end_val=float_.load('end2'),
-    #             shift_len=float_.load('shift2')
-    #     ) as it2:
-    #         it2.store('&d')
-    #         (a * b * c * g).store('&c')
+# with Loop(
+#     start_val=float_.load('start'),
+#     end_val=float_.load('end'),
+#     shift_len=float_.load('shift')
+# ) as it:
+#     with Loop(
+#             start_val=it,
+#             end_val=float_.load('end2'),
+#             shift_len=float_.load('shift2')
+#     ) as it2:
+#         it2.store('&d')
+#         (a * b * c * g).store('&c')
 
 @CUDAFunc(yo=1.0, elo=2.0, ndims=2)
 def cuda_test():
