@@ -16,6 +16,9 @@ class VType:
     def zero(self):
         return graph_ctx.zero(self)
 
+    def one(self):
+        return graph_ctx.one(self)
+
     def load(self, val):
         return graph_ctx.load(self, val)
 

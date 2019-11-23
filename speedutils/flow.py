@@ -154,10 +154,17 @@ class FlowGraph:
             v.scope_n = 0
         return self._add_n(v)
 
-    def zero(self, t: VType):
-        return self._add_n(
-            OpNode(self, 'zeroY{}'.format(t), ())
-        )
+    def zero(self, t: VType) -> GNode:
+        ret = OpNode(self, 'zeroY{}'.format(t), ())
+        ret.num_attrs.add('zero')
+        self._add_n(ret)
+        return ret
+
+    def one(self, t: VType) -> GNode:
+        ret = self.const(t, 1.0)
+        ret.num_attrs.add('one')
+        self._add_n(ret)
+        return ret
 
     def bind_scope(self, v: GNode) -> GNode:
         vscoped = v.reset_orig()

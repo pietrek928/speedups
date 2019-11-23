@@ -136,18 +136,25 @@ class Func:
         r.update(args)
         return r
 
-    def _format_call_args(self, arg_list: Iterable[FuncArg]) -> Tuple[str, List[GNode]]:
-        call_args = []
-        arg_nodes = []
+    def _get_call_vals(self, arg_list: Iterable[FuncArg]):
         for arg in arg_list:
             v = vars_ctx.get(arg.name)
             if v is None:
                 raise ValueError(f'You must provide {arg.name} to {self._name}')
             if isinstance(v, GNode):
+                yield v
+            else:
+                yield arg.type.format(v)
+
+    def _format_call_args(self, call_vals) -> Tuple[str, List[GNode]]:
+        call_args = []
+        arg_nodes = []
+        for v in call_vals:
+            if isinstance(v, GNode):
                 call_args.append('{}')
                 arg_nodes.append(v)
             else:
-                call_args.append(arg.type.format(v))
+                call_args.append(v)
         return ', '.join(str(v) for v in call_args), arg_nodes
 
     def _get_consts(self) -> List[Tuple[str, VType, Any]]:
@@ -172,12 +179,16 @@ class Func:
 
     def _gen_call(self):
         name = self._get_name()
-        args_fmt, arg_vars = self._format_call_args(self._var_args)
+        args_fmt, arg_vars = self._format_call_args(
+            self._get_call_vals(
+                self._var_args
+            )
+        )
         graph_ctx.raw_code(f'{name}({args_fmt})', *arg_vars)
 
     def call(self, **kwargs):
         inline = kwargs.pop('inline', False)
-        opts = self._get_all_opts(kwargs)  # TODO: auto pick vars
+        opts = self._get_all_opts(kwargs)  # TODO: auto pick vars ?
         if not inline:
             with func_scope(self):
                 with use_only_vars(**opts):
@@ -186,10 +197,11 @@ class Func:
                         self._analyze()
                 if not registered:
                     opts = self._get_all_opts(kwargs)
+            if not registered:
                 with use_only_vars(**opts):
-                    if not registered:
-                        self._register()
-                    self._gen_call()
+                    self._register()
+            with use_vars(**opts):
+                self._gen_call()
         else:
             with use_vars(**opts):
                 self._func()

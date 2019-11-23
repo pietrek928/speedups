@@ -4,6 +4,7 @@ from typing import Iterable
 from .array import MemArray, Dimension, CumDims
 from .func import Func
 from .gnode import GNode
+from .gpu import GpuFunc
 from .proc_ctx import graph_ctx, func_ctx
 from .vtypes import int32_, Tcfg
 
@@ -58,13 +59,13 @@ class LoopFunc(Func):
                 func_ctx.const_val('block_ddims', Tcfg)
             )
             block_sizes = []
-            for d in reversed(loop_dims):
+            for d in loop_dims:
                 block_sizes.append(block_ddims)
                 block_ddims *= CumDims.from_cfg([d])
 
             loop_stack = []
             iters = {}
-            for d, s in zip(loop_dims, reversed(block_sizes)):
+            for d, s in zip(reversed(loop_dims), reversed(block_sizes)):
                 d = Dimension(*d)
                 n = d.n
                 it_n = f'it_{n}'
@@ -84,7 +85,7 @@ class LoopFunc(Func):
 
 
 class GpuLoopFunc(Func):
-    def decor(self, f: Func):
+    def decor(self, f: GpuFunc):
         def wrapper(f: Func = f):
             loop_dims = func_ctx.const_val('loop_dims', Tcfg)
             block_ddims = CumDims.from_cfg(

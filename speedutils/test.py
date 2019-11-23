@@ -1,5 +1,5 @@
 from .func import func_reg
-from .gpu import CUDAFunc
+from .gpu import CUDAFunc, CLFunc
 from .proc_ctx import proc, func_ctx, new_graph, graph_ctx
 from .proc_descr import ProcDescr
 from .vtypes import v4f, float_, int32_
@@ -33,7 +33,9 @@ pd = ProcDescr(
         ('storYint32', None, 7.0, (6, 1), True),
         ('nopYint32', int32_, 0.0, (4,), True),
         ('addYint32Xint32', int32_, 1.0, (4,), True),
-        ('mulYint32Xint32', int32_, 3.0, (4,), True)
+        ('mulYint32Xint32', int32_, 3.0, (4,), True),
+        ('mulYint32Xfloat', float_, 3.0, (4,), True),
+        ('addYint32Xfloat', float_, 3.0, (4,), True)
     )
 )
 
@@ -62,19 +64,26 @@ pd = ProcDescr(
 #         it2.store('&d')
 #         (a * b * c * g).store('&c')
 
-@CUDAFunc(yo=1.0, elo=2.0, ndims=3)
+@CUDAFunc(yo=1.0, elo=2.0)
 def cuda_test():
-    (func_ctx.get_dim(0) * func_ctx.get_dim(1) * func_ctx.get_dim(2)).store('&aaa')
+    (
+        func_ctx.get_dim(0) * func_ctx.get_dim(1) * func_ctx.get_dim(2) + func_ctx.get_var('elo', float_)
+    ).store('&aaa')
 
 
 with proc(pd):
-    cuda_test.gen(dict(elo=2.5))
+    # cuda_test.gen(dict(elo=2.5))
     with new_graph():
-        cuda_test(size0=1, size1=1, size2=1, size3=1)
+        cuda_test(it_dims=(1, 2, 3, 4))
         graph_ctx.gen_code()
     # ttest(elo=3.0, eloo=9.0, y_sz=12345, z_sz=67899)
     # ttest.gen(dict(elo=5.0))
 
+    for n, (f, opts) in func_reg.items():
+        f.gen({
+            n: t.format(v)
+            for n, t, v in opts
+        })
     print(func_reg)
 
 # ttest()

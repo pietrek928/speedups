@@ -1,21 +1,97 @@
 from .func import Func, FuncArg
 from .gnode import LoadNode
-from .proc_ctx import graph_ctx
-from .vtypes import int32_, bool__
+from .proc_ctx import graph_ctx, vars_ctx
+from .vtypes import int32_, bool__, Tcfg
 
 
 class GpuFunc(Func):
+    def __init__(self, **opts):
+        super().__init__(**opts)
+        self._args['ndims'] = FuncArg(
+            name='ndims',
+            const=True,
+            type=int32_
+        )
+
+    def _get_all_opts(self, args):
+        args = dict(args)
+        try:
+            if 'it_dims' in args or 'ndims' not in args:
+                args['ndims'] = len(args['it_dims'])
+        except Exception:
+            raise ValueError('Could not determine `ndims`')
+        return super()._get_all_opts(args)
+
     def call(self, **kwargs):
         if kwargs.get('inline'):
             raise ValueError('Cannot inline gpu function')
         return super().call(**kwargs)
 
     @property
+    def _ndims(self):
+        return self.const_val('ndims', int32_)
+
+    def _get_call_val(self, n, t):
+        try:
+            return vars_ctx.get(n)
+        except KeyError:
+            raise ValueError(f'You have to provide `{n}` for `{self._name}` call')
+
+    @property
     def _dim_args(self):
-        return tuple(
-            FuncArg(name=f'size{dn}', const=False, type=int32_)
-            for dn in range(self.const_val('ndims', int32_))
+        dim_args = tuple(
+            self._get_call_val('it_dims', Tcfg)
         )
+        return dim_args
+
+    def get_dim(self, dn: int) -> LoadNode:
+        raise NotImplementedError('`get_dim` not implemented')
+
+    def get_size(self, dn: int) -> LoadNode:
+        raise NotImplementedError('`get_size` not implemented')
+
+
+class GroupedGpuFunc(GpuFunc):
+    def _group_id(self, dn: int) -> LoadNode:
+        raise NotImplementedError('`_group_id` not implemented')
+
+    def _group_dim(self, dn: int) -> LoadNode:
+        raise NotImplementedError('`_group_dim` not implemented')
+
+    def _local_id(self, dn: int) -> LoadNode:
+        raise NotImplementedError('`_local_id` not implemented')
+
+    def _local_dim(self, dn: int) -> LoadNode:
+        raise NotImplementedError('`_local_dim` not implemented')
+
+    @property
+    def _nlocal_dims(self):
+        return (self._ndims + 1) // 2
+
+    def get_dim(self, dn: int) -> LoadNode:
+        assert dn < self._ndims
+
+        if dn < self._nlocal_dims:
+            return self._local_id(dn)
+        else:
+            return self._group_id(dn - self._nlocal_dims)
+
+    def get_size(self, dn: int) -> LoadNode:
+        assert dn < self._ndims
+
+        if dn < self._nlocal_dims:
+            return self._group_dim(dn)
+        else:
+            return self._local_dim(dn - self._nlocal_dims)
+
+    def _get_local_dims(self):
+        return self._dim_args[:self._nlocal_dims]
+
+    def _get_group_dims(self):
+        group_dims = list(self._dim_args[self._nlocal_dims:])
+        if len(group_dims) < self._nlocal_dims:
+            group_dims.append(int32_.one())
+        return group_dims
 
 
 class CLExt_(bool__):
@@ -25,12 +101,18 @@ class CLExt_(bool__):
 CLExt = CLExt_()
 
 
-class CLFunc(GpuFunc):
-    def get_dim(self, dn: int) -> LoadNode:
-        return int32_.load(f'get_global_id({dn})')
+class CLFunc(GroupedGpuFunc):
+    def _group_id(self, dn: int) -> LoadNode:
+        return int32_.load(f'get_group_id({dn})')
 
-    def get_size(self, dn: int) -> LoadNode:
-        return int32_.load(f'get_global_size({dn})')
+    def _group_dim(self, dn: int) -> LoadNode:
+        return int32_.load(f'get_num_groups({dn})')
+
+    def _local_id(self, dn: int) -> LoadNode:
+        return int32_.load(f'get_local_id({dn})')
+
+    def _local_dim(self, dn: int) -> LoadNode:
+        return int32_.load(f'get_local_size({dn})')
 
     def _print_exts(self, exts):
         for e in exts:
@@ -39,48 +121,52 @@ class CLFunc(GpuFunc):
             ))
 
     def gen(self, opts):
-        self._print_exts(self._filter_arg_type(CLExt))
+        # self._print_exts(self._filter_arg_type(CLExt))
         self.codeln('__kernel')
         super().gen(opts)
 
+    def _gen_call(self):
+        name = self._get_name()
+        args_fmt, args_vars = self._format_call_args(
+            self._get_call_vals(
+                self._var_args
+            )
+        )
 
-class CUDAFunc(GpuFunc):
+        group_dims_fmt, group_dims_vars = self._format_call_args(
+            a * b for a, b in
+            zip(self._get_group_dims(), self._get_local_dims())
+        )
+        local_dims_fmt, local_dims_vars = self._format_call_args(
+            self._get_local_dims()
+        )
+
+        graph_ctx.raw_code(
+            f'{{{{'
+            f'size_t group_dim_vals = {{{{ {group_dims_fmt} }}}};'
+            f'size_t local_dim_vals = {{{{ {local_dims_fmt} }}}};'
+            f'clSetKernelArgs(kernel, {args_fmt});'
+            f'clEnqueueNDRangeKernel(queue, kernel_{name}, {self._nlocal_dims},'
+            f'NULL, &group_dim_vals, &local_dim_vals, 0, NULL, NULL);'
+            f'}}}}',
+            *group_dims_vars, *local_dims_vars
+        )
+
+
+class CUDAFunc(GroupedGpuFunc):
     DIM_NAMES = 'xyz'
 
-    def _block_id(self, dn: int) -> LoadNode:
+    def _group_id(self, dn: int) -> LoadNode:
         return int32_.load(f'blockIdx.{self.DIM_NAMES[dn]}')
 
-    def _block_dim(self, dn: int) -> LoadNode:
-        return int32_.load(f'blockDim.{self.DIM_NAMES[dn]}')
-
-    def _thread_id(self, dn: int) -> LoadNode:
-        return int32_.load(f'threadIdx.{self.DIM_NAMES[dn]}')
-
-    def _grid_dim(self, dn: int) -> LoadNode:
+    def _group_dim(self, dn: int) -> LoadNode:
         return int32_.load(f'gridDim.{self.DIM_NAMES[dn]}')
 
-    # def get_dim_pos(self, dn: int) -> LoadNode:
-    #     return self._block_id(dn) * self._block_dim(dn) + self._thread_id(dn)
+    def _local_id(self, dn: int) -> LoadNode:
+        return int32_.load(f'threadIdx.{self.DIM_NAMES[dn]}')
 
-    def get_dim(self, dn: int) -> LoadNode:
-        ndims = self.const_val('ndims', int32_)
-        assert dn < ndims
-
-        nth = ndims // 2
-        if dn < nth:
-            return self._thread_id(dn)
-        else:
-            return self._block_id(dn - ndims)  # TODO: mul ?????
-
-    def get_size(self, dn: int) -> LoadNode:
-        ndims = self.const_val('ndims', int32_)
-        assert dn < ndims
-
-        nth = ndims // 2
-        if dn < nth:
-            return self._block_dim(dn)
-        else:
-            return self._grid_dim(dn - nth)  # TODO: mul ?????
+    def _local_dim(self, dn: int) -> LoadNode:
+        return int32_.load(f'blockDim.{self.DIM_NAMES[dn]}')
 
     def gen(self, opts):
         self.codeln('__global__')
@@ -88,13 +174,20 @@ class CUDAFunc(GpuFunc):
 
     def _gen_call(self):
         name = self._get_name()
-        dim_args = self._dim_args
-        args_fmt, arg_vars = self._format_call_args(self._var_args)
+        args_fmt, arg_vars = self._format_call_args(
+            self._get_call_vals(
+                self._var_args
+            )
+        )
 
-        grid_dims_fmt, grid_dims_vars = self._format_call_args(dim_args[len(dim_args) // 2:])
-        block_dims_fmt, block_dims_vars = self._format_call_args(dim_args[:len(dim_args) // 2])
+        group_dims_fmt, group_dims_vars = self._format_call_args(
+            self._get_group_dims()
+        )
+        local_dims_fmt, local_dims_vars = self._format_call_args(
+            self._get_local_dims()
+        )
 
         graph_ctx.raw_code(
-            f'{name}<<<dim3({grid_dims_fmt}),dim3({block_dims_fmt})>>>({args_fmt})',
-            *grid_dims_vars, *block_dims_vars, *arg_vars
+            f'{name}<<<dim3({group_dims_fmt}),dim3({local_dims_fmt})>>>({args_fmt});',
+            *group_dims_vars, *local_dims_vars, *arg_vars
         )

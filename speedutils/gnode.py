@@ -228,14 +228,10 @@ class GNode:
         return self.p.op(n, *a)
 
     def gen_zero(self) -> GNode:
-        ret = self.p.zero(self.type)
-        ret.attr_stack.add('zero')
-        return ret
+        return self.p.zero(self.type)
 
     def gen_one(self) -> GNode:
-        ret = self.p.const(self.type, 1.0)
-        ret.attr_stack.add('one')
-        return ret
+        return self.p.one(self.type)
 
     def store(self, val):
         self.p.store(self, val)
