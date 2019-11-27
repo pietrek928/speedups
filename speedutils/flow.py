@@ -1,8 +1,7 @@
 from itertools import chain
-from typing import Dict, Iterable, Set, Optional
+from typing import Dict, Iterable, Set, Optional, List
 
 from . import optim
-
 from .gnode import OpNode, ConstNode, StoreNode, LoadNode, CvtNode, GNode, OpDescr, VarNode, OpScope, CodeNode, SepNode
 from .graph import GraphOptim
 from .utils import str_list
@@ -11,8 +10,8 @@ from .vtypes import VType
 
 class ScopeDescr:
     def __init__(self, exp_use: float):
-        self.exp_use = exp_use
-        self.nodes = []
+        self.exp_use: float = exp_use
+        self.nodes: List['GNode'] = []
 
     def append(self, v: 'GNode'):
         self.nodes.append(v)
@@ -56,7 +55,7 @@ class FlowGraph:
         self._op_idx: Dict[str, GNode] = {}
         self._proc: optim._proc = p
         self._use_stack = [1.0]
-        self._scope_list = []
+        self._scope_list: List[ScopeDescr] = []
         self._orig_aliases = {}
 
         self.new_scope()
@@ -89,7 +88,7 @@ class FlowGraph:
         op_n = f'storY{t}'
         return self.ops[op_n]
 
-    def _add_n(self, v: GNode):
+    def _add_n(self, v: GNode) -> GNode:
         k = v.key
         if k in self._op_idx:
             return self._op_idx[k].copy()
@@ -122,33 +121,33 @@ class FlowGraph:
         except ValueError:
             return len(self._scope_list) - 1
 
-    def op(self, n, *a: GNode):
+    def op(self, n, *a: GNode) -> GNode:
         return self._add_n(
             OpNode(self, n, a)
         )
 
-    def cvt(self, v: GNode, t: VType):
+    def cvt(self, v: GNode, t: VType) -> GNode:
         return self._add_n(
             CvtNode(self, v, t)
         )
 
-    def load(self, t: VType, val):
+    def load(self, t: VType, val) -> GNode:
         return self._add_n(
             LoadNode(self, t, val)
         )
 
-    def store(self, v: GNode, val):
+    def store(self, v: GNode, val) -> GNode:
         return self._add_n(
             StoreNode(self, v, val)
         )
 
-    def const(self, t: VType, v):
+    def const(self, t: VType, v) -> GNode:
         # v = self._format_const(t, v)
         return self._add_n(
             ConstNode(self, t, v)
         )
 
-    def var(self, t: VType, name: str, start_scope=True):
+    def var(self, t: VType, name: str, start_scope=True) -> GNode:
         v = VarNode(self, t, name)
         if start_scope:
             v.scope_n = 0
@@ -171,7 +170,7 @@ class FlowGraph:
         vscoped.scope_n = self.get_scope_n()
         return vscoped
 
-    def sep(self, v: GNode):
+    def sep(self, v: GNode) -> GNode:
         return self._add_n(
             SepNode(self, v)
         )
@@ -182,15 +181,15 @@ class FlowGraph:
     def add_alias(self, oldv: GNode, newv: GNode):
         self._orig_aliases[newv.orig] = self.get_alias(oldv)
 
-    def node_mapper(self):
+    def node_mapper(self) -> NodeMapper:
         return NodeMapper(self.get_alias)
 
-    def raw_code(self, code: str, *a: GNode):
+    def raw_code(self, code: str, *a: GNode) -> GNode:
         return self._add_n(
             CodeNode(self, code, a)
         )
 
-    def stationary_code(self, code: str, *a: GNode):
+    def stationary_code(self, code: str, *a: GNode) -> GNode:
         self.new_scope()
         code_node = CodeNode(self, code, a)
         code_node.scope_n = self.get_scope_n()
@@ -218,7 +217,7 @@ class FlowGraph:
 
         return used
 
-    def optim_graph(self):
+    def optim_graph(self) -> GraphOptim:
         ordered = []
         op_scopes = []
         used = self.select_used()

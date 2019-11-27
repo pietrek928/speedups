@@ -44,7 +44,7 @@ class Func:
 
     def _get_name(self) -> str:
         const_descr = 'X'.join(
-            f'{k}V{t.format(v)}' for k, t, v in self._get_consts()
+            f'{k}V{t.trunc(v)}' for k, t, v in self._get_consts()
         ).replace('.', 'K')
         return f'{self._name}_' \
                f'{const_descr}_' \
@@ -109,7 +109,7 @@ class Func:
 
         return a, val
 
-    def v(self, v, t: VType):
+    def v(self, v, t: VType) -> GNode:
         if isinstance(v, str):
             return self.get_var(v, t)
         else:
@@ -134,7 +134,10 @@ class Func:
     def _get_all_opts(self, args):
         r = dict(self._opts)
         r.update(args)
-        return r
+        return self._process_args(r)
+
+    def _process_args(self, args):
+        return args
 
     def _get_call_vals(self, arg_list: Iterable[FuncArg]):
         for arg in arg_list:

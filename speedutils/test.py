@@ -1,5 +1,6 @@
+from speedutils.gpu import CLFunc, CUDAFunc
 from .func import func_reg
-from .gpu import CUDAFunc, CLFunc
+from .loop import GpuLoopFunc
 from .proc_ctx import proc, func_ctx, new_graph, graph_ctx
 from .proc_descr import ProcDescr
 from .vtypes import v4f, float_, int32_
@@ -64,17 +65,19 @@ pd = ProcDescr(
 #         it2.store('&d')
 #         (a * b * c * g).store('&c')
 
-@CUDAFunc(yo=1.0, elo=2.0)
-def cuda_test():
+# @CLFunc(yo=1.0, elo=2.0)
+@GpuLoopFunc(CUDAFunc, loop_dims=(('y', 4), ('x', 2), ('y', 'y_sz'),), block_ddims=(('x', 2), ('y', 4)))
+def cuda_test(it_x, it_y):
     (
-        func_ctx.get_dim(0) * func_ctx.get_dim(1) * func_ctx.get_dim(2) + func_ctx.get_var('elo', float_)
+            it_x * it_y + func_ctx.get_var('elo', float_)
     ).store('&aaa')
 
 
 with proc(pd):
     # cuda_test.gen(dict(elo=2.5))
     with new_graph():
-        cuda_test(it_dims=(1, 2, 3, 4))
+        # cuda_test(it_dims=(1, 2, 3, 4))
+        cuda_test(elo=3.5, y_sz=12345)
         graph_ctx.gen_code()
     # ttest(elo=3.0, eloo=9.0, y_sz=12345, z_sz=67899)
     # ttest.gen(dict(elo=5.0))

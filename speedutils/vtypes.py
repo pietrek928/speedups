@@ -7,10 +7,16 @@ class VType:
     name: str = '?'
     dims: Tuple[int] = ()
 
-    def format(self, v):
-        return str(v)
+    def __call__(self, val):
+        return func_ctx.v(val, self)
 
-    def v(self, val):
+    def format(self, v):
+        return v
+
+    def trunc(self, v):
+        return str(self.format(v))
+
+    def v(self, val):  # TODO: remove
         return func_ctx.v(val, self)
 
     def zero(self):
@@ -100,6 +106,9 @@ class Tcfg_(VType):
         raise ValueError('cfg has no dimensions')
 
     def format(self, v) -> str:
+        return v
+
+    def trunc(self, v):
         return _format_cfg(v)
 
 
