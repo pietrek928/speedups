@@ -70,7 +70,7 @@ class proc_descr {
 
     int new_op(op_time_t len_t, py::object &ports) {
         auto r = ops.size();
-        int l = py::len(ports);
+        //int l = py::len(ports);
         auto v_ports = convert_to_vector<int>(ports);
         ops.emplace_back(len_t, v_ports);
         return r;
@@ -79,8 +79,9 @@ class proc_descr {
 
 class proc_state {
     proc_descr & p;
-    smtree mt;
     vector<op_time_t> ports_free_time;
+    smtree mt;
+
     vector<op_time_t> end_t;
     vector<int> last_usage;
     map<int, op_time_t> m_port_map;
@@ -184,8 +185,8 @@ class prog {
         }
     };
 
-    py::object p_ref;
     proc_descr &p;
+    py::object p_ref;
 
     vector<single_op_descr> ops;
     vector<vector<int>> G;
@@ -206,8 +207,8 @@ class prog {
         int scope_n = 0;
         auto cur_scope = op_scopes[scope_n++];
 
-        for (long i=0; i<n; i++) {
-            while (py::extract<int>(cur_scope.attr("end_pos")) < i) {
+        for (unsigned long i=0; i<n; i++) {
+            while (py::extract<unsigned long>(cur_scope.attr("end_pos")) < i) {
                 cur_scope = op_scopes[scope_n++];
             }
             auto &cur_op = ops[i];
@@ -219,7 +220,7 @@ class prog {
             cur_op.exp_use = py::extract<float>(cur_scope.attr("exp_use"));
         }
 
-        for (long i=0; i<n; i++) {
+        for (unsigned long i=0; i<n; i++) {
             auto &v = G.emplace_back();
             auto vpy = Gpy[i];
             auto m = py::len(vpy);
@@ -228,7 +229,7 @@ class prog {
             }
         }
 
-        for (int i=0; i<n; i++) {
+        for (unsigned long i=0; i<n; i++) {
             auto &v = G[i];
             for (auto &nv : v) {
                 G_rev[nv].push_back(i);
@@ -245,7 +246,7 @@ class prog {
 
         state.clear();
 
-        for (int i=0; i<G.size(); i++) {
+        for (unsigned long i=0; i<G.size(); i++) {
             int n = left[i] = G[i].size();
             if (!n) {
                 node_queue.emplace(ops[i].clamp_pos(order[i]), i);
@@ -277,7 +278,7 @@ class prog {
 
         //priority_queue<pair<int, int>, vector<pair<int, int>>, less<pair<int, int>>> q;
 
-        for (int i=0; i<G_rev.size(); i++) {
+        for (unsigned long i=0; i<G_rev.size(); i++) {
             int n = left[i] = G_rev[i].size();
             if (!n) {
                 node_queue.emplace(o - ops[i].clamp_pos(order[i]), i);
@@ -325,13 +326,13 @@ class prog {
 void test(prog &prg) {
     vector<int> ord;
     float score = 1e18;
-    for (int i=0; i<prg.size(); i++) {
+    for (unsigned long i=0; i<prg.size(); i++) {
         ord.push_back(-i);
     }
     cout << prg.reorder_f(ord) << endl;
-    for (int k=0; k<20; k++) {
+    for (unsigned long k=0; k<20; k++) {
         for (int j=25; j>=1; j--) {
-            for (int i=0; i<ord.size(); i++) {
+            for (unsigned long i=0; i<ord.size(); i++) {
                 auto ord_new = ord;
                 ord_new[i]+=3;
                 auto score_new = prg.reorder_f(ord_new);

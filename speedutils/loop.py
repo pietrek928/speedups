@@ -1,4 +1,5 @@
 from collections import defaultdict
+from functools import wraps
 from itertools import chain
 from typing import Iterable, Type
 
@@ -58,6 +59,7 @@ class Loop:
 
 class LoopFunc(Func):
     def decor(self, f: Func):
+        @wraps(f)
         def wrapper(f: Func = f):
             loop_dims = func_ctx.const_val('loop_dims', Tcfg)
             block_ddims = CumDims.from_cfg(
@@ -129,6 +131,7 @@ def _create_gpu_loop_func(gpu_func_t: Type[GpuFunc]) -> Type[GpuFunc]:
             return super()._process_args(args)
 
         def decor(self, f: Func):
+            @wraps(f)
             def wrapper(f: Func = f):
                 loop_cfg = func_ctx.const_val('loop_cfg', Tcfg)
                 block_ddims = func_ctx.const_val('block_ddims', Tcfg)
