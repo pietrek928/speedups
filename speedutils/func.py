@@ -1,7 +1,7 @@
-from typing import NamedTuple, Dict, List, Any, Tuple, Iterable
+from typing import Any, Dict, Iterable, List, NamedTuple, Tuple
 
 from .gnode import GNode
-from .proc_ctx import proc_ctx, new_graph, graph_ctx, vars_ctx, use_vars, func_scope, use_only_vars
+from .proc_ctx import func_scope, graph_ctx, new_graph, proc_ctx, use_only_vars, use_vars, vars_ctx
 from .vtypes import VType
 
 
@@ -112,6 +112,8 @@ class Func:
     def v(self, v, t: VType) -> GNode:
         if isinstance(v, str):
             return self.get_var(v, t)
+        elif isinstance(v, GNode):
+            return v  # TODO: convert
         else:
             return graph_ctx.const(t, v)
 

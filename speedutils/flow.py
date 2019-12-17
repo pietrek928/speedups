@@ -131,14 +131,14 @@ class FlowGraph:
             CvtNode(self, v, t)
         )
 
-    def load(self, t: VType, val) -> GNode:
+    def load(self, t: VType, arr: GNode, idx: GNode) -> GNode:
         return self._add_n(
-            LoadNode(self, t, val)
+            LoadNode(self, t, arr, idx)
         )
 
-    def store(self, v: GNode, val) -> GNode:
+    def store(self, v: GNode, arr: GNode, idx) -> GNode:
         return self._add_n(
-            StoreNode(self, v, val)
+            StoreNode(self, v, arr, idx)
         )
 
     def const(self, t: VType, v) -> GNode:

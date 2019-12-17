@@ -3,7 +3,7 @@ from functools import wraps
 from itertools import chain
 from typing import Iterable, Type
 
-from .array import MemArray, Dimension, CumDims
+from .array import StoredArray, Dimension, CumDims
 from .func import Func
 from .gnode import GNode
 from .gpu import GroupedGpuFunc, GpuFunc
@@ -174,7 +174,7 @@ def GpuLoopFunc(gpu_func_t: Type[GpuFunc], **kwargs):
 
 
 class ArraysLoop:
-    def __init__(self, arrs: Iterable[MemArray], dim_order: Iterable[Dimension]):
+    def __init__(self, arrs: Iterable[StoredArray], dim_order: Iterable[Dimension]):
         self._arrs = tuple(arrs)
         self._dim_order = tuple(dim_order)
 

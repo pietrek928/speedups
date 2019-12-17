@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-from copy import deepcopy, copy
-from typing import Tuple, Iterable, List, NamedTuple, Set, Optional, TYPE_CHECKING
+from copy import copy, deepcopy
+from typing import Iterable, List, NamedTuple, Optional, Set, TYPE_CHECKING, Tuple
 
 from .proc_ctx import func_ctx
-from .utils import get_p2, str_list, flush_attrs
-from .vtypes import VType, OpDescr
+from .utils import flush_attrs, str_list
+from .vtypes import OpDescr, VType
 
 if TYPE_CHECKING:
     from .flow import FlowGraph
@@ -32,7 +32,7 @@ OpScope = NamedTuple('OpScope', (('start_pos', int), ('end_pos', int), ('exp_use
 
 
 class GNode:
-    a = ()
+    a: Tuple[GNode, ...] = ()
     val_args = ()
     var_name = None
 
@@ -161,31 +161,13 @@ class GNode:
         n = ''
         for i, s in enumerate(dshifts):
             if s:
-                n += 'X{}S{}'.format(i, s)
+                n += f'X{i}S{s}'
 
         return self.gen_op('shufl' + n, self, v), \
                self.gen_op('shufh' + n, self, v)
 
-    @staticmethod
-    def shuf_dims(n: int, vecs: Iterable[GNode]) -> Tuple[GNode]:
-        vecs: List[GNode] = list(vecs)
-        if vecs:
-            vdims = vecs[0].type.dims
-            assert n < len(vdims)
-
-            dim_sz = vdims[n]
-            dim_shuf = tuple(int(i == n) for i in range(len(vdims)))
-            assert len(vecs) == dim_sz
-
-            for it_n in reversed(range(get_p2(dim_sz))):
-                s = 2 ** it_n
-                for i in range(0, dim_sz, s * 2):
-                    for j in range(s):
-                        vecs[i + j], vecs[i + j + s] = vecs[i + j].shuf(vecs[i + j + s], *dim_shuf)
-        return tuple(vecs)
-
     def rotp(self, v: GNode, p: int, dn: int):
-        dim_sz = v.type.dims[dn]
+        dim_sz = v.type.shape[dn]
         assert p <= dim_sz
         if not p:
             return self.copy()
@@ -233,8 +215,8 @@ class GNode:
     def gen_one(self) -> GNode:
         return self.p.one(self.type)
 
-    def store(self, val):
-        self.p.store(self, val)
+    def store(self, arr: GNode, val):
+        self.p.store(self, arr, val)
 
     def copy(self) -> GNode:
         r = copy(self)
@@ -291,24 +273,26 @@ class OpNode(GNode):
 
 
 class StoreNode(GNode):
-    def __init__(self, p, v: GNode, val):
+    def __init__(self, p: 'FlowGraph', v: GNode, arr: GNode, idx: GNode):  # TODO: None node ?
         v = v.flush_attr()
-        super().__init__(p, p.get_scope_n(v))
-        self.a: Tuple[GNode] = (v,)
+        arr = arr.flush_attr()
+        idx = idx.flush_attr()
+        super().__init__(p, p.get_scope_n(v, arr, idx))
+        self.a = (v, arr, idx)
         self.op = p.find_store_op(v.type)
-        self.val = val
 
-    @property
-    def val_args(self):
-        return self.val,
 
-    @property
-    def key(self) -> str:
-        return '{}Z{}'.format(super().key, self.val)
+class LoadNode(GNode):
+    def __init__(self, p: 'FlowGraph', t: VType, arr: GNode, idx: GNode):
+        arr = arr.flush_attr()
+        idx = idx.flush_attr()
+        super().__init__(p, p.get_scope_n())
+        self.a = (arr, idx)
+        self.op = p.find_load_op(t)
 
 
 class VarNode(GNode):
-    def __init__(self, p, t: VType, var_name: str):
+    def __init__(self, p: 'FlowGraph', t: VType, var_name: str):
         super().__init__(p, p.get_scope_n())
         self.t = t
         self.var_name = var_name
@@ -326,7 +310,7 @@ class VarNode(GNode):
 
 
 class ConstNode(GNode):
-    def __init__(self, p, t: VType, val):
+    def __init__(self, p: 'FlowGraph', t: VType, val):
         super().__init__(p, p.get_scope_n())
         self.op = p.find_const_op(t)
         self.val = val
@@ -340,23 +324,8 @@ class ConstNode(GNode):
         return '{}Z{}'.format(self.op_name, self.val)
 
 
-class LoadNode(GNode):
-    def __init__(self, p, t: VType, val):
-        super().__init__(p, p.get_scope_n())
-        self.op = p.find_load_op(t)
-        self.val = val
-
-    @property
-    def val_args(self):
-        return self.val,
-
-    @property
-    def key(self) -> str:
-        return '{}Z{}'.format(self.op_name, self.val)
-
-
 class CvtNode(GNode):
-    def __init__(self, p, v: GNode, t: VType):
+    def __init__(self, p: 'FlowGraph', v: GNode, t: VType):
         v = v.flush_attr()
         super().__init__(p, p.get_scope_n(v))
         self.a = (v,)
@@ -364,7 +333,7 @@ class CvtNode(GNode):
 
 
 class CodeNode(GNode):
-    def __init__(self, p, code, a: Iterable[GNode]):
+    def __init__(self, p: 'FlowGraph', code, a: Iterable[GNode]):
         a = flush_attrs(a)
         super().__init__(p, p.get_scope_n(*a))
         self.a: Tuple[GNode] = tuple(a)
@@ -391,7 +360,7 @@ class CodeNode(GNode):
 class SepNode(GNode):
     op_name = ''
 
-    def __init__(self, p, v: GNode):
+    def __init__(self, p: 'FlowGraph', v: GNode):
         v = v.flush_attr()
         super().__init__(p, p.get_scope_n())
         self.a: Tuple[GNode] = (v,)

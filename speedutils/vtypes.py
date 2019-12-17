@@ -1,11 +1,14 @@
-from typing import Tuple, NamedTuple
+from typing import NamedTuple, TYPE_CHECKING, Tuple
 
-from .proc_ctx import graph_ctx, func_ctx
+from .proc_ctx import func_ctx, graph_ctx
+
+if TYPE_CHECKING:
+    from .gnode import GNode
 
 
 class VType:
     name: str = '?'
-    dims: Tuple[int] = ()
+    shape: Tuple[int] = ()
 
     def __call__(self, val):
         return func_ctx.v(val, self)
@@ -25,8 +28,8 @@ class VType:
     def one(self):
         return graph_ctx.one(self)
 
-    def load(self, val):
-        return graph_ctx.load(self, val)
+    def load(self, arr: GNode, idx: GNode):
+        return graph_ctx.load(self, arr, idx)
 
     def var(self, name: str, const=False, default=None):
         return func_ctx.get_var(name, self, const=const, default=default)
@@ -41,14 +44,20 @@ class VType:
         return str(self)
 
 
-class ptr(VType):
-    name = 'ptr'
-
+class Ptr(VType):
     def __init__(self, t: VType):
         self._t: VType = t
 
     def __str__(self):
         return f'{self._t}*'
+
+    @property
+    def dims(self):
+        raise ValueError('`ptr` has no dimensions')
+
+    @property
+    def name(self):
+        return f'ptrX{self._t.name}'
 
 
 OpDescr = NamedTuple('op_descr', (('name', str), ('op_id', int), ('ordered', int), ('out_t', VType)))
@@ -77,12 +86,12 @@ class float__(VType):
 
 class v4f_(VType):
     name = 'v4f'
-    dims = (4,)
+    shape = (4,)
 
 
 class v4x2f_(VType):
     name = 'v4x2f'
-    dims = (4, 2)
+    shape = (4, 2)
 
 
 def _format_cfg(obj):

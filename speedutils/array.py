@@ -1,9 +1,9 @@
 from collections import defaultdict
 from itertools import chain, product
-from typing import Iterable, Tuple, Mapping, Dict, Callable, Any, List, NamedTuple
+from typing import Any, Callable, Iterable, Mapping, NamedTuple, Tuple, Union
 
-from .utils import muli, addi
-from .vtypes import v4f, VType
+from .utils import addi, muli
+from .vtypes import Ptr, VType, int32_
 
 Dimension = NamedTuple('Dimension', (('n', str), ('size', int)))
 
@@ -33,6 +33,21 @@ class CumDims(defaultdict):
             for k in set(chain(self.keys(), d.keys()))
         )
 
+    def __truediv__(self, d: 'CumDims'):
+        rd = {}
+        for k in set(chain(self.keys(), d.keys())):
+            if self[k] % d[k]:
+                raise ValueError(f'Cannot divide dimensions {self} / {d}')
+            rd[k] = self[k] // d[k]
+        return CumDims(rd)
+
+    def __sub__(self, d: 'CumDims'):
+        return CumDims(
+            (k, self[k] - d[k])
+            for k in set(chain(self.keys(), d.keys()))
+            if self[k] < d[k]
+        )
+
     # def to_pos(self):
     #     return CumPos(**{
     #         k: v for k, v in self.items()
@@ -46,18 +61,17 @@ class CumDims(defaultdict):
             n = muli(n, size)
         return n
 
-    def poss(self) -> Iterable['CumPos']:
+    @property
+    def indexes(self) -> Iterable['CumPos']:
         dnames, dsizes = zip(*self.items())
         for pos in product(*(range(i) for i in dsizes)):
             yield CumPos(zip(dnames, pos))
 
-    def poss_array(self) -> Tuple['OrdDims', Tuple['CumPos']]:
-        dims = OrdDims(*self.items())
-        dnames, dsizes = zip(*dims)
-
-        return dims, tuple(
-            CumPos(zip(dnames, pos))
-            for pos in product(*(range(i) for i in dsizes))
+    @property
+    def indexes_array(self) -> 'IndexesArray':
+        return IndexesArray(
+            self.items(),
+            self.indexes
         )
 
 
@@ -85,7 +99,7 @@ class CumPos(defaultdict):
             yield self + p
 
 
-class OrdDims(tuple):
+class OrdDims(Tuple[Dimension]):
     def __init__(self, dims: Iterable[Dimension]):
         super().__init__(dims)
 
@@ -110,73 +124,89 @@ class OrdDims(tuple):
 
         return idx
 
+    @property
+    def shape(self) -> Tuple[int, ...]:
+        return tuple(
+            dim.size for dim in self
+        )
 
-def _aggr_dims(dims: Iterable[Dimension]) -> Dict[str, int]:
-    ddims = defaultdict(lambda: 1)
-    for dim in dims:
-        ddims[dim.n] *= dim.size
-    return ddims
+    @property
+    def names(self) -> Tuple[str, ...]:
+        return tuple(
+            dim.n for dim in self
+        )
 
+    def __truediv__(self, d: Union['CumDims', 'OrdDims']):
+        if isinstance(d, OrdDims):
+            d = CumDims.from_dims(d)
 
-def _ddims_poss(ddims: Mapping[str, int]) -> Iterable[Mapping[str, int]]:  # !!!
-    dnames, dsizes = zip(*ddims.items())
-    for pos in product(*(range(i) for i in dsizes)):
-        yield zip(dnames, pos)
+        r = []
+        for dim in self:
+            s = dim.size
+            if d[dim.n] > 1:
+                if d[dim.n] > s:
+                    assert d[dim.n] % s == 0
+                    d[dim.n] //= s
+                    s = 1
+                else:
+                    assert s % d[dim.n] == 0
+                    s //= d[dim.n]
+                    d[dim.n] = 1
+            if s > 1:
+                r.append(Dimension(dim.n, s))
+
+        return OrdDims(r)
 
 
 class ArrayDescr:
     def __init__(self, t: VType, dims: Iterable[Dimension]):
         self._t = t
 
-        vdims = []
-        dims = list(dims)
-        for i, sz in enumerate(t.dims):
-            dim = dims[0]
-            vdims.append(Dimension(n=dim.n, size=sz))
+        # vdims = []
+        # dims = list(dims)
+        # for i, sz in enumerate(t.dims):
+        #     dim = dims[0]
+        #     vdims.append(Dimension(n=dim.n, size=sz))
+        #
+        #     if dim.size == sz:
+        #         del dims[0]
+        #     if not (i == len(t.dims) - 1 and dim.size % sz == 0):
+        #         raise ValueError(f'Dimension {dim.n} size invalid')
+        #     dims[0] = Dimension(n=dim.n, size=dim.size // sz)
 
-            if dim.size == sz:
-                del dims[0]
-            if not (i == len(t.dims) - 1 and dim.size % sz == 0):
-                raise ValueError('Dimension {} size invalid'.format(dim.n))
-            dims[0] = Dimension(n=dim.n, size=dim.size // sz)
-
-        self._dims: OrdDims = OrdDims(dims)
-        self._vdims: OrdDims = OrdDims(vdims)
+        self.dims: OrdDims = OrdDims(dims)
+        # self._vdims: OrdDims = OrdDims(vdims)
 
     @property
     def size(self) -> int:
         n = 1
-        for dim in self._dims:
+        for dim in self.dims:
             n = muli(n, dim.size)
         return n
 
-    def _vec_dims(self, dims: OrdDims) -> OrdDims:
-        dims = tuple(dims)
-        assert dims[:len(self._vdims)] == self._vdims
-        return OrdDims(dims[len(self._vdims):])
+    # def _vec_dims(self, dims: OrdDims) -> OrdDims:
+    #     dims = tuple(dims)
+    #     assert dims[:len(self._vdims)] == self._vdims
+    #     return OrdDims(dims[len(self._vdims):])
+    #
+    # def _vec_ddims(self, ddims: CumDims) -> CumDims:
+    #     ddims = ddims.copy()
+    #     for vdim in self._vdims:
+    #         if vdim.n in ddims:
+    #             if ddims[vdim.n] % vdim.size:
+    #                 raise ValueError('Dimension {} size not multiple of vector size'.format(vdim.n))
+    #             ddims[vdim.n] //= vdim.size
+    #         else:
+    #             raise ValueError('Lacking dimension {}'.format(vdim.n))
+    #     return ddims
 
-    def _vec_ddims(self, ddims: CumDims) -> CumDims:
-        ddims = ddims.copy()
-        for vdim in self._vdims:
-            if vdim.n in ddims:
-                if ddims[vdim.n] % vdim.size:
-                    raise ValueError('Dimension {} size not multiple of vector size'.format(vdim.n))
-                ddims[vdim.n] //= vdim.size
-            else:
-                raise ValueError('Lacking dimension {}'.format(vdim.n))
-        return ddims
-
-    @property
-    def dims(self) -> OrdDims:
-        return self._vdims + self._dims
+    # @property
+    # def dims(self) -> OrdDims:
+    #     return self._dims
 
     @property
     def ddims(self) -> CumDims:
         return CumDims.from_dims(self.dims)
-
-    @property
-    def ddims_vec_poss(self) -> Iterable[CumPos]:
-        return CumDims.from_dims(self._dims).poss()
 
     # def _get_idx_vec(self, pos: CumDims):
     #     shift = 1
@@ -193,57 +223,64 @@ class ArrayDescr:
     #         shift *= dim.size
     #     return idx
 
-    def indexes(self, ddims: CumDims, start=0):
-        return self.vec_indexes(self._vec_ddims(ddims), start)
+    # def indexes(self, ddims: CumDims, start=0):
+    #     return self.block_indexes(self._vec_ddims(ddims), start)
 
-    def vec_indexes(self, vec_ddims: Mapping[str, int], start=0):
-        ddims = defaultdict(
-            lambda: 1,
-            vec_ddims
-        )
+    def block_indexes(self, block_ddims: Mapping[str, int], start=0) -> 'IndexesArray':
+        ddims = CumDims(block_ddims)
 
         if isinstance(start, int):
-            start_idx = start
+            start_pos = start
         else:
-            start_idx = 0
+            start_pos = 0
 
-        items = RegArray(
-            t=self._t,
-            dims=self._vdims,
-            items=(start_idx,)
+        items = IndexesArray(
+            dims=self.dims,
+            items=(start_pos,)
         )
         shift = 1
-        for dim in self._dims:
+        for dim in self.dims:
             if ddims[dim.n] > 1:
                 cur_size = min(ddims[dim.n], dim.size)
                 if min(ddims[dim.n], dim.size) % cur_size:
                     raise ValueError('Dimension {} is not multiple, and is not taken as last')
                 ddims[dim.n] //= cur_size
-                items = items.extend(shift, Dimension(n=dim.n, size=cur_size))
+                items = items.extend_indexes(shift, Dimension(n=dim.n, size=cur_size))
             shift = muli(shift, dim.size)
 
-        if start and not start_idx:
+        if start and not start_pos:
             items = items.map(lambda i: addi(start, i))
 
         return items
 
-    def get_idx(self, vec_pos: CumDims):
-        return self.dims.get_idx(vec_pos)
+    def get_idx(self, pos: CumPos):
+        return self.dims.get_idx(pos)
+
+
+class StoredArray(ArrayDescr):
+    def __init__(self, t: VType, dims: Iterable[Dimension], arr):
+        super().__init__(t, dims)
+        self._arr = arr
+
+    @property
+    def arr_node(self):
+        return Ptr(self._t)(self._arr)
+
+    def load(self, ddims: Mapping[str, int], start=0):
+        return self.block_indexes(ddims, start).map(
+            lambda idx: self._t.load(self.arr_node, idx)
+        )
+
+    def store(self, a: 'MemArray', start=0):
+        idxs = self.block_indexes(a.ddims, start)
+        a = a.reshape(idxs.dims)
+        a.map2(
+            idxs,
+            lambda v, idx: v.store(self.arr_node, idx)
+        )
 
 
 class MemArray(ArrayDescr):
-    def load(self, p, dims: Mapping[str, int], start=0):
-        return self.vec_indexes(dims, start).map(
-            lambda i: p.load(v4f, i)  # !!!!!!!!
-        )
-
-    def store(self, a: 'RegArray', start=0):
-        idxs = self.indexes(a.ddims, start)
-        a = a.reshape(idxs.dims)
-        # !!!!!!!!
-
-
-class RegArray(ArrayDescr):
     def __init__(self, t: VType, dims: Iterable[Dimension], items: Iterable = None):
         super().__init__(t, dims)
 
@@ -255,13 +292,17 @@ class RegArray(ArrayDescr):
 
     def dim_size(self, dim_n: str) -> int:
         n = 1
-        for dim in self._dims:
+        for dim in self.dims:
             if dim.n == dim_n:
                 n *= dim.size
         return n
 
-    def map(self, func: Callable[[Any], Any]) -> 'RegArray':
-        return RegArray(
+    @property
+    def ddims_indexes(self) -> Iterable[CumPos]:
+        return CumDims.from_dims(self.dims).indexes
+
+    def map(self, func: Callable[[Any], Any]) -> 'MemArray':
+        return MemArray(
             t=self._t,
             dims=self.dims,
             items=(
@@ -269,9 +310,9 @@ class RegArray(ArrayDescr):
             )
         )
 
-    def map2(self, a: 'RegArray', func: Callable[[Any, Any], Any]) -> 'RegArray':
+    def map2(self, a: 'MemArray', func: Callable[[Any, Any], Any]) -> 'MemArray':
         assert self.dims == a.dims
-        return RegArray(
+        return MemArray(
             t=self._t,
             dims=self.dims,
             items=(
@@ -279,77 +320,50 @@ class RegArray(ArrayDescr):
             )
         )
 
-    def extend(self, shift, dim: Dimension) -> 'RegArray':
-        shifted = [self._items]
-        cur_shift = shift
-        for i in range(1, dim.n):
-            shifted.append(
-                addi(v, shift) for v in self._items
-            )
-            cur_shift = addi(cur_shift, shift)
-        return RegArray(
-            t=self._t,
-            dims=chain(self.dims, (dim,)),
-            items=chain(*shifted)
-        )
-
-    def reshape(self, dims: Iterable[Dimension]) -> 'RegArray':
-        r = RegArray(
+    def reshape(self, dims: Iterable[Dimension]) -> 'MemArray':
+        r = MemArray(
             t=self._t,
             dims=dims
         )
 
-        # TODO: reshape vectors
-        assert self._vdims == r._vdims
         assert self.ddims == r.ddims
 
-        for p in self.ddims_vec_poss:
-            r.set_vec(p, self.get_vec(p))
+        for p in self.ddims_indexes:
+            r.set(p, self.get(p))
 
         return r
 
-    def block_iterate(self, block_dims: CumDims):  # TODO: shift order ?
-        block_items = block_dims.poss()
-        for block_start in (self.ddims - block_dims).poss():  # !!!!!!!!
-            vdims, poss = block_start.poss_array()
-            a = RegArray(
-                t=self._t,
-                dims=self._t.dims + vdims,
-                items=block_start.shift(block_items)
-            )
-            return a.map(lambda v: self.get_vec(v))
+    def block_iterate(self, block_ddims: CumDims) -> Iterable['MemArray']:  # TODO: shift order ?
+        block_items = block_ddims.indexes_array
+        for block_start in (self.ddims - block_ddims).indexes:
+            yield block_items.shift(block_start).map(self.get)
 
-    def get_vec(self, pos: CumPos):
-        return self._items[self._dims.get_idx(pos)]
+    def get(self, pos: CumPos):
+        return self._items[self.dims.get_idx(pos)]
 
-    def set_vec(self, pos: CumPos, val):
-        self._items[self._dims.get_idx(pos)] = val
+    def set(self, pos: CumPos, val):
+        self._items[self.dims.get_idx(pos)] = val
 
     # def __getitem__(self, *items):
     #     return self.get(items)
 
 
-class ArrayIteration:
-    def __init__(self, dims: Iterable[Dimension]):
-        self._dims: List[Dimension] = list(dims)
-        self._orig_dims: Tuple[Dimension] = tuple(self._dims)
+class IndexesArray(MemArray):
+    def __init__(self, dims: Iterable[Dimension], items: Iterable):
+        super().__init__(int32_, dims, items)
 
-    def get_dim(self, n):
-        for d in self._dims:
-            if d.n == n and d.size > 1:
-                return d.size
+    def extend_indexes(self, shift, dim: Dimension) -> 'MemArray':
+        shifted = [self._items]
+        cur_shift = shift
+        for i in range(1, dim.size):
+            shifted.append(
+                addi(v, shift) for v in self._items
+            )
+            cur_shift = addi(cur_shift, shift)
+        return IndexesArray(
+            dims=chain(self.dims, (dim,)),
+            items=chain(*shifted)
+        )
 
-    def move_dim(self, d: Dimension):
-        shift = 1
-
-        for i, di in enumerate(self._dims):
-            if di.n == d.n:
-                if di.size <= d.size:
-                    self._dims[i] = Dimension(
-                        n=di.n,
-                        size=di.size // d.size
-                    )
-                break
-            shift *= self._orig_dims[i].size
-
-        return shift, shift * d.size
+    def shift(self, p: CumPos):
+        return self.map(lambda pp: pp + p)

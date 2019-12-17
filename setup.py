@@ -15,6 +15,5 @@ setup(
     ext_package='speedutils',
     ext_modules=cythonize([
         optim_module
-    ]),
-
+    ])
 )
