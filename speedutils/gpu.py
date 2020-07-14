@@ -1,5 +1,5 @@
 from .func import Func, FuncArg
-from .gnode import LoadNode
+from .graphval import LoadNode
 from .proc_ctx import graph_ctx, vars_ctx
 from .vtypes import int32_, bool__, Tcfg
 

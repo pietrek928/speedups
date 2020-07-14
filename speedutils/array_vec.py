@@ -1,7 +1,7 @@
 from typing import Iterable, List, Tuple, Mapping
 
 from .array import ArrayDescr, CumDims, Dimension, MemArray, OrdDims, StoredArray
-from .gnode import GNode
+from .graphval import GraphVal
 from .utils import get_p2
 from .vtypes import VType
 
@@ -20,7 +20,9 @@ class VecArrayDescr(ArrayDescr):
 
     @property
     def vdims(self) -> OrdDims:
-        return self.vec_type_dims + self.dims
+        return OrdDims(
+            self.vec_type_dims + self.dims
+        )
 
     @property
     def vddims(self) -> CumDims:
@@ -64,7 +66,7 @@ class VecMemArray(MemArray, VecArrayDescr):
 
         r = self.reshape(odim + self.dims / OrdDims((odim, )))
 
-        vecs: List[GNode, ...] = list(r._items)
+        vecs: List[GraphVal, ...] = list(r._items)
         assert vecs
 
         dim_sz = odim.size

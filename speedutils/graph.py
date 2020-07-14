@@ -1,16 +1,16 @@
 from typing import Iterable, List, Tuple, Any, Dict, TYPE_CHECKING
 
 from . import optim
-from .gnode import GNode, OpScope
+from .graphval import GraphVal, OpScope
 
 if TYPE_CHECKING:
     from .flow import FlowGraph
 
 
 class GraphOptim:
-    def __init__(self, p: 'FlowGraph', op_l: Iterable[GNode], op_scopes: Iterable[OpScope]):
+    def __init__(self, p: 'FlowGraph', op_l: Iterable[GraphVal], op_scopes: Iterable[OpScope]):
         self.p: 'FlowGraph' = p
-        self.op_l: Tuple[GNode] = tuple(op_l)
+        self.op_l: Tuple[GraphVal] = tuple(op_l)
         self._prog = optim._prog(p, self.op_nums, self._simple_graph(), op_scopes)
 
     @property

@@ -3,12 +3,12 @@ from functools import wraps
 from itertools import chain
 from typing import Iterable, Type
 
-from .array import StoredArray, Dimension, CumDims
+from .array import CumDims, Dimension, StoredArray
 from .func import Func
-from .gnode import GNode
-from .gpu import GroupedGpuFunc, GpuFunc
-from .proc_ctx import graph_ctx, func_ctx
-from .vtypes import int32_, Tcfg
+from .gpu import GpuFunc, GroupedGpuFunc
+from .graphval import GraphVal
+from .proc_ctx import func_ctx, graph_ctx
+from .vtypes import CodeVal, Tcfg, int32_
 
 
 def _it_name(dname) -> str:
@@ -19,11 +19,11 @@ class Loop:
     def __init__(
             self,
             exp_use: float = 1.0,
-            start_val: GNode = None,
-            end_val: GNode = None,
-            range_len: GNode = None,
-            shift_len: GNode = None,
-            external_iter: GNode = None
+            start_val: GraphVal = None,
+            end_val: GraphVal = None,
+            range_len: GraphVal = None,
+            shift_len: GraphVal = None,
+            external_iter: GraphVal = None
     ):
         self._exp_use = exp_use
 
@@ -40,14 +40,14 @@ class Loop:
             self._end_val = end_val
 
     def open(self):
-        graph_ctx.start_use_block(self._exp_use)
-        graph_ctx.stationary_code('do {{')
+        CodeVal.start_use_block(self._exp_use)
+        CodeVal.stationary_code('do {{')
         return graph_ctx.bind_scope(self._iter_val)
 
     def close(self):
         it = graph_ctx.bind_scope(self._iter_val)
-        graph_ctx.stationary_code('{} = {};', it, it + self._shift_len)
-        graph_ctx.stationary_code('}} while ({} < {});', it, self._end_val)
+        CodeVal.stationary_code('{} = {};', it, it + self._shift_len)
+        CodeVal.stationary_code('}} while ({} < {});', it, self._end_val)
         graph_ctx.end_use_block()
 
     def __enter__(self):

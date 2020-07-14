@@ -1,7 +1,7 @@
 from typing import Tuple, TYPE_CHECKING, Iterable
 
 if TYPE_CHECKING:
-    from .gnode import GNode
+    from .graphval import GraphVal
 
 
 def is_p2(n) -> bool:
@@ -60,7 +60,7 @@ def str_list(l):
     return tuple(str(v) for v in l)
 
 
-def flush_attrs(nodes: Iterable['GNode']) -> Tuple['GNode']:
+def flush_attrs(nodes: Iterable['GraphVal']) -> Tuple['GraphVal']:
     return tuple(
         v.flush_attr() for v in nodes
     )

@@ -1,6 +1,6 @@
 from typing import Any, Dict, Iterable, List, NamedTuple, Tuple
 
-from .gnode import GNode
+from .graphval import GraphVal
 from .proc_ctx import func_scope, graph_ctx, new_graph, proc_ctx, use_only_vars, use_vars, vars_ctx
 from .vtypes import VType
 
@@ -81,7 +81,7 @@ class Func:
             )
         else:
             a = self._args[name]
-            if a.type != t:
+            if not isinstance(a.type, t):
                 raise ValueError(f'Invalid type `{t}` for `{name}` having already type `{a.type}`')
 
         if default is not None:
@@ -109,21 +109,21 @@ class Func:
 
         return a, val
 
-    def v(self, v, t: VType) -> GNode:
+    def v(self, v, t: VType) -> GraphVal:
         if isinstance(v, str):
             return self.get_var(v, t)
-        elif isinstance(v, GNode):
+        elif isinstance(v, GraphVal):
             return v  # TODO: convert
         else:
-            return graph_ctx.const(t, v)
+            return t.from_const(v)
 
-    def get_var(self, name, t: VType, const=False, default=None) -> GNode:
+    def get_var(self, name, t: VType, const=False, default=None) -> GraphVal:
         a, val = self._lookup_var(name, t, const=const, default=default)
 
         if a.const:
             return graph_ctx.const(t, val)
         else:
-            return graph_ctx.var(t, name, start_scope=True)
+            return t.var(name, start_scope=True)
 
     def const_val(self, name, t: VType, default=None):
         a, val = self._lookup_var(name, t, const=True, default=default)
@@ -146,16 +146,16 @@ class Func:
             v = vars_ctx.get(arg.name)
             if v is None:
                 raise ValueError(f'You must provide {arg.name} to {self._name}')
-            if isinstance(v, GNode):
+            if isinstance(v, GraphVal):
                 yield v
             else:
                 yield arg.type.format(v)
 
-    def _format_call_args(self, call_vals) -> Tuple[str, List[GNode]]:
+    def _format_call_args(self, call_vals) -> Tuple[str, List[GraphVal]]:
         call_args = []
         arg_nodes = []
         for v in call_vals:
-            if isinstance(v, GNode):
+            if isinstance(v, GraphVal):
                 call_args.append('{}')
                 arg_nodes.append(v)
             else:

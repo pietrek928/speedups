@@ -1,7 +1,6 @@
 from _contextvars import ContextVar
 from contextlib import contextmanager
-
-from typing import Union, TYPE_CHECKING
+from typing import Iterable, TYPE_CHECKING, Union
 
 if TYPE_CHECKING:
     from .flow import FlowGraph
@@ -12,7 +11,7 @@ class ProcCtx:
     def __init__(self, pd):
         self._pd = pd
 
-    def new_graph(self):
+    def new_graph(self) -> 'FlowGraph':
         from .flow import FlowGraph
         return FlowGraph(mem_levels=self._pd.mem_levels, ops=self._pd.ops)
 
@@ -27,6 +26,10 @@ class CtxVarProxy:
         self._get = self._var.get
         self._set = self._var.set
         self.reset = self._var.reset
+
+    @property
+    def value(self):
+        return self._get()
 
     def __getattr__(self, n):
         return getattr(self._get(), n)
@@ -79,7 +82,7 @@ def func_scope(f):
 
 
 @contextmanager
-def new_graph():
+def new_graph() -> Iterable['FlowGraph']:
     graph = proc_ctx.new_graph()
     old = graph_ctx._set(graph)
     try:

@@ -1,9 +1,6 @@
-from speedutils.gpu import CLFunc, CUDAFunc
-from .func import func_reg
-from .loop import GpuLoopFunc
-from .proc_ctx import proc, func_ctx, new_graph, graph_ctx
+from .proc_ctx import new_graph, proc
 from .proc_descr import ProcDescr
-from .vtypes import v4f, float_, int32_
+from .vtypes import float_, int32_, v4f
 
 pd = ProcDescr(
     name='testproc',
@@ -40,7 +37,6 @@ pd = ProcDescr(
     )
 )
 
-
 # @LoopFunc(
 #     loop_dims=(('y', 'y_sz'), ('z', 'z_sz'), ('x', 8), ('y', 8), ('z', 16)),
 #     block_ddims=(('x', 2), ('y', 4), ('z', 8))
@@ -66,28 +62,37 @@ pd = ProcDescr(
 #         (a * b * c * g).store('&c')
 
 # @CLFunc(yo=1.0, elo=2.0)
-@GpuLoopFunc(CUDAFunc, loop_dims=(('y', 4), ('x', 2), ('y', 'y_sz'),), block_ddims=(('x', 2), ('y', 4)))
-def cuda_test(it_x, it_y):
-    (
-            it_x * it_y + func_ctx.get_var('elo', float_)
-    ).store('&aaa')
+# @GpuLoopFunc(CUDAFunc, loop_dims=(('y', 4), ('x', 2), ('y', 'y_sz'),), block_ddims=(('x', 2), ('y', 4)))
+# def cuda_test(it_x, it_y):
+#     (
+#             it_x * it_y + func_ctx.get_var('elo', float_)
+#     ).store('&aaa')
+#
+#
+# with proc(pd):
+#     # cuda_test.gen(dict(elo=2.5))
+#     with new_graph():
+#         # cuda_test(it_dims=(1, 2, 3, 4))
+#         cuda_test(elo=3.5, y_sz=12345)
+#         graph_ctx.gen_code()
+#     # ttest(elo=3.0, eloo=9.0, y_sz=12345, z_sz=67899)
+#     # ttest.gen(dict(elo=5.0))
+#
+#     for n, (f, opts) in func_reg.items():
+#         f.gen({
+#             n: t.format(v)
+#             for n, t, v in opts
+#         })
+#     print(func_reg)
 
+with proc(pd), new_graph() as g:
+    a = float_.var('yooooo')
+    b = float_.var('yeeeee')
+    c = a + b
+    c *= a
+    c.store(int32_.var('arr xD'), int32_.var('pp'))
 
-with proc(pd):
-    # cuda_test.gen(dict(elo=2.5))
-    with new_graph():
-        # cuda_test(it_dims=(1, 2, 3, 4))
-        cuda_test(elo=3.5, y_sz=12345)
-        graph_ctx.gen_code()
-    # ttest(elo=3.0, eloo=9.0, y_sz=12345, z_sz=67899)
-    # ttest.gen(dict(elo=5.0))
-
-    for n, (f, opts) in func_reg.items():
-        f.gen({
-            n: t.format(v)
-            for n, t, v in opts
-        })
-    print(func_reg)
+    g.print_graph()
 
 # ttest()
 

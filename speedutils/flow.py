@@ -1,19 +1,18 @@
 from itertools import chain
-from typing import Dict, Iterable, Set, Optional, List
+from typing import Dict, Iterable, List, Optional, Set
 
 from . import optim
-from .gnode import OpNode, ConstNode, StoreNode, LoadNode, CvtNode, GNode, OpDescr, VarNode, OpScope, CodeNode, SepNode
 from .graph import GraphOptim
-from .utils import str_list
-from .vtypes import VType
+from .graphval import GraphVal, OpScope
+from .vtypes import OpDescr, VType
 
 
 class ScopeDescr:
     def __init__(self, exp_use: float):
         self.exp_use: float = exp_use
-        self.nodes: List['GNode'] = []
+        self.nodes: List['GraphVal'] = []
 
-    def append(self, v: 'GNode'):
+    def append(self, v: 'GraphVal'):
         self.nodes.append(v)
 
 
@@ -23,13 +22,13 @@ class NodeMapper:
         self._d = {}
         self._n = 0
 
-    def set(self, v: GNode, n: str = None):
+    def set(self, v: GraphVal, n: str = None):
         if not n:
             n = f'v{self._n}'
             self._n += 1
         self._d[v.orig] = n
 
-    def get(self, v: GNode):
+    def get(self, v: GraphVal):
         return self._d[self._alias_mapper(v).orig]
 
 
@@ -52,7 +51,7 @@ class FlowGraph:
                 [port2n[p] for p in ports]
             )
             self.ops[n] = OpDescr(n, op_id, ordered, out_t)
-        self._op_idx: Dict[str, GNode] = {}
+        self._op_idx: Dict[str, GraphVal] = {}
         self._proc: optim._proc = p
         self._use_stack = [1.0]
         self._scope_list: List[ScopeDescr] = []
@@ -60,8 +59,8 @@ class FlowGraph:
 
         self.new_scope()
 
-    def find_op(self, n: str, a: Iterable[GNode]):
-        t = str_list(v.type for v in a)
+    def find_op(self, n: str, a: Iterable[GraphVal]) -> OpDescr:
+        t = tuple(v.type_name for v in a)
         try:
             op_n = f'{n}Y{"X".join(t)}'
             return self.ops[op_n]
@@ -73,23 +72,24 @@ class FlowGraph:
             raise ValueError('Wrong argument order')
 
     def find_const_op(self, t: VType):
-        op_n = f'constY{t}'
+        op_n = f'constY{t.type_name}'
         return self.ops[op_n]
 
     def find_load_op(self, t: VType):
-        op_n = f'loadY{t}'
+        op_n = f'loadY{t.type_name}'
         return self.ops[op_n]
 
-    def find_cvt_op(self, v: GNode, t: VType):
-        op_n = f'cvtY{v.type}X{t}'
+    def find_cvt_op(self, v: GraphVal, t: VType):
+        op_n = f'cvtY{v.type_name}X{t}'
         return self.ops[op_n]
 
     def find_store_op(self, t: VType):
-        op_n = f'storY{t}'
+        op_n = f'storY{t.type_name}'
         return self.ops[op_n]
 
-    def _add_n(self, v: GNode) -> GNode:
+    def add_node(self, v: GraphVal) -> GraphVal:
         k = v.key
+        # v.p = self
         if k in self._op_idx:
             return self._op_idx[k].copy()
         else:
@@ -112,7 +112,7 @@ class FlowGraph:
             )
         )
 
-    def get_scope_n(self, *a: GNode) -> int:
+    def get_scope_n(self, *a: GraphVal) -> int:
         scopes = tuple(
             v.scope_n for v in a
         )
@@ -121,81 +121,68 @@ class FlowGraph:
         except ValueError:
             return len(self._scope_list) - 1
 
-    def op(self, n, *a: GNode) -> GNode:
-        return self._add_n(
-            OpNode(self, n, a)
-        )
+    # def op(self, n, *a: GraphVal) -> GraphVal:
+    #     return self.add_node(
+    #         OpNode(self, n, a)
+    #     )
 
-    def cvt(self, v: GNode, t: VType) -> GNode:
-        return self._add_n(
-            CvtNode(self, v, t)
-        )
+    # def cvt(self, v: GraphVal, t: VType) -> GraphVal:
+    #     return self.add_node(
+    #         CvtNode(self, v, t)
+    #     )
+    #
+    # def load(self, t: VType, arr: GraphVal, idx: GraphVal) -> GraphVal:
+    #     return self.add_node(
+    #         LoadNode(self, t, arr, idx)
+    #     )
 
-    def load(self, t: VType, arr: GNode, idx: GNode) -> GNode:
-        return self._add_n(
-            LoadNode(self, t, arr, idx)
-        )
+    # def store(self, v: GraphNode, arr: GraphNode, idx) -> GraphNode:
+    #     return self.add_node(
+    #         StoreNode(self, v, arr, idx)
+    #     )
 
-    def store(self, v: GNode, arr: GNode, idx) -> GNode:
-        return self._add_n(
-            StoreNode(self, v, arr, idx)
-        )
+    # def const(self, t: VType, v) -> GraphVal:
+    #     # v = self._format_const(t, v)
+    #     return self.add_node(
+    #         ConstNode(self, t, v)
+    #     )
 
-    def const(self, t: VType, v) -> GNode:
-        # v = self._format_const(t, v)
-        return self._add_n(
-            ConstNode(self, t, v)
-        )
+    # def var(self, t: VType, name: str, start_scope=True) -> GraphNode:
+    #     v = VarNode(self, t, name)
+    #     if start_scope:
+    #         v.scope_n = 0
+    #     return self.add_node(v)
 
-    def var(self, t: VType, name: str, start_scope=True) -> GNode:
-        v = VarNode(self, t, name)
-        if start_scope:
-            v.scope_n = 0
-        return self._add_n(v)
+    # def zero(self, t: VType) -> GraphVal:
+    #     ret = OpNode(self, 'zeroY{}'.format(t), ())
+    #     ret.num_attrs.add('zero')
+    #     self.add_node(ret)
+    #     return ret
+    #
+    # def one(self, t: VType) -> GraphVal:
+    #     ret = self.const(t, 1.0)
+    #     ret.num_attrs.add('one')
+    #     self.add_node(ret)
+    #     return ret
+    #
+    # def bind_scope(self, v: GraphVal) -> GraphVal:
+    #     vscoped = v.reset_orig()
+    #     vscoped.scope_n = self.get_scope_n()
+    #     return vscoped
 
-    def zero(self, t: VType) -> GNode:
-        ret = OpNode(self, 'zeroY{}'.format(t), ())
-        ret.num_attrs.add('zero')
-        self._add_n(ret)
-        return ret
+    # def sep(self, v: GraphNode) -> GraphNode:
+    #     return self._add_n(
+    #         SepNode(self, v)
+    #     )
 
-    def one(self, t: VType) -> GNode:
-        ret = self.const(t, 1.0)
-        ret.num_attrs.add('one')
-        self._add_n(ret)
-        return ret
-
-    def bind_scope(self, v: GNode) -> GNode:
-        vscoped = v.reset_orig()
-        vscoped.scope_n = self.get_scope_n()
-        return vscoped
-
-    def sep(self, v: GNode) -> GNode:
-        return self._add_n(
-            SepNode(self, v)
-        )
-
-    def get_alias(self, v: GNode) -> GNode:
+    def get_alias(self, v: GraphVal) -> GraphVal:
         return self._orig_aliases.get(v.orig) or v
 
-    def add_alias(self, oldv: GNode, newv: GNode):
+    def add_alias(self, oldv: GraphVal, newv: GraphVal):
         self._orig_aliases[newv.orig] = self.get_alias(oldv)
 
     def node_mapper(self) -> NodeMapper:
         return NodeMapper(self.get_alias)
-
-    def raw_code(self, code: str, *a: GNode) -> GNode:
-        return self._add_n(
-            CodeNode(self, code, a)
-        )
-
-    def stationary_code(self, code: str, *a: GNode) -> GNode:
-        self.new_scope()
-        code_node = CodeNode(self, code, a)
-        code_node.scope_n = self.get_scope_n()
-        r = self._add_n(code_node)
-        self.new_scope()
-        return r
 
     def select_used(self) -> Set[int]:
         stack = []
@@ -203,7 +190,7 @@ class FlowGraph:
 
         for v in self._op_idx.values():
             v = self.get_alias(v)
-            if v.type is None:
+            if not v.has_output:
                 stack.append(v)
 
         while stack:
@@ -251,9 +238,8 @@ class FlowGraph:
         nums = self.node_mapper()
         for v in self.used_ordered():
             nums.set(v)
-            print('{}: {} {}'.format(
-                nums.get(v).orig, v.key, ' '.join(map(nums.get, v.a))
-            ))
+            args = ' '.join(map(nums.get, v.a))
+            print(f'{nums.get(v)}: {v.key} {args}')
 
     def gen_code(self, ord: Optional[Iterable[int]] = None):
         nodes = self.used_ordered()
@@ -265,4 +251,4 @@ class FlowGraph:
         for i in ord:
             v = nodes[i]
             nums.set(v, v.var_name)
-            v.print_op(nums.get)
+            v.print_op(nums)

@@ -77,7 +77,7 @@ class CumDims(defaultdict):
 
 class CumPos(defaultdict):
     def __init__(self, *a, **k):
-        super().__init__(lambda: 0, *a, **k)
+        super().__init__(int, *a, **k)
 
     def copy(self):
         return CumPos(self)
