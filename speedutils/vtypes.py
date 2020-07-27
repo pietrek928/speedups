@@ -1,41 +1,13 @@
-from typing import Iterable, NamedTuple, TYPE_CHECKING
+from typing import NamedTuple, TYPE_CHECKING
 
 from .graphval import GraphVal, VType
-from .proc_ctx import graph_ctx
 
 if TYPE_CHECKING:
-    from .flow import NodeMapper
+    pass
 
 
 class CodeVal(GraphVal):
-    has_output = False
-
-    def __init__(self, code, a: Iterable[GraphVal]):
-        super().__init__(
-            a=a
-        )
-        self.code = code
-        self.key = str(self.orig)  # do not remove duplicates for code
-        self.val_args = (self.code,)
-
-    def print_op(self, mapper: 'NodeMapper'):
-        print(
-            self.code.format(*map(mapper.get, self.a))
-        )
-
-    @classmethod
-    def from_code(cls, code: str, *a: GraphVal) -> GraphVal:
-        v = cls(code=code, a=a)
-        return v.p.add_node(v)
-
-    @classmethod
-    def stationary_code(cls, code: str, *a: GraphVal) -> GraphVal:
-        graph_ctx.new_scope()
-        v = cls(code=code, a=a)
-        v.scope_n = graph_ctx.get_scope_n()
-        r = v.p.add_node(v)
-        graph_ctx.new_scope()
-        return r
+    type_name = 'code'
 
 
 # class VType:
@@ -113,10 +85,11 @@ class int32_(GraphVal):
 
 class float_(GraphVal):
     type_name = 'float'
+    shape = (1,)
 
     @classmethod
     def from_const(cls, val):  # TODO: check nan ?
-        super().from_const(float(val))
+        return super().from_const(float(val))
 
 
 class v4f(GraphVal):
@@ -128,7 +101,7 @@ class v4f(GraphVal):
         items = tuple(
             map(float, val)
         )
-        super().from_const(items)
+        return super().from_const(items)
 
 
 # class v4x2f_(VType):
@@ -139,11 +112,11 @@ class v4f(GraphVal):
 def _trunc_cfg(obj) -> str:
     if isinstance(obj, dict):
         return _trunc_cfg(
-            tuple(obj.items())
+            tuple(sorted(obj.items()))
         )
     elif isinstance(obj, (list, tuple)):
         return 'I'.join(
-            sorted(map(_trunc_cfg, obj))
+            tuple(map(_trunc_cfg, obj))
         )
     else:
         return str(obj)
@@ -151,6 +124,10 @@ def _trunc_cfg(obj) -> str:
 
 class Tcfg(GraphVal):
     name = 'cfg'
+
+    @classmethod
+    def var(cls, var_name: str, start_scope=True):
+        raise NotImplementedError('Configuration from variable is unsupported')
 
     @property
     def dims(self):

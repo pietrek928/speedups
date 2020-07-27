@@ -36,13 +36,20 @@ class GraphVal:
     op_name: str = ''
     val_args = ()
     var_name: Optional[str] = None
-    has_output: bool = True
+    val = ''
     const: bool = False
     type_name: str = '?'
+    comment = None
+    name_prefix = None
+    is_rendered = True
 
     dims = (1,)
 
-    def __init__(self, a: Iterable['GraphVal', ...] = (), op: Optional['OpDescr'] = None):
+    def __init__(
+            self,
+            a: Iterable['GraphVal', ...] = (), op: Optional['OpDescr'] = None,
+            code=None, remove_duplicates=True
+    ):
         self.p: 'FlowGraph' = graph_ctx.value
         self.scope_n: int = self.p.get_scope_n(*a)
         self.a = tuple(
@@ -54,13 +61,37 @@ class GraphVal:
         self.orig = _next_orig()
 
         self.op = op
+        self.code = code
+        self.op_name = self.code
         if self.op is not None:
-            self.op_name = self.op.name
-            self.key = self._gen_key()
+            self.op_name = self.op_name or self.op.name
+        else:
+            remove_duplicates = False
 
-    # @property
-    # def dims(self):
-    #     raise ValueError('`ptr` has no dimensions')
+        if remove_duplicates:
+            self.key = self._gen_key()
+        else:
+            str(self.orig)
+
+    def trunc(self) -> str:
+        if self.const:
+            return str(self.val)
+        return str(self.var_name or self.orig or '')
+
+    def istype(self, *t: VType):
+        return isinstance(self, t)
+
+    def set_comment(self, comment):
+        self.comment = comment
+        return self
+
+    def set_prefix(self, name_prefix):
+        self.name_prefix = name_prefix
+        return self
+
+    @property
+    def has_output(self):
+        return self.op is not None and self.op.out_t is not None
 
     def flush_attr(self) -> GraphVal:
         new_node = self.copy()
@@ -227,7 +258,7 @@ class GraphVal:
 
     @classmethod
     def gen_zero(cls) -> GraphVal:
-        v = cls.from_op(f'zeroY{cls.type_name}')
+        v = cls.from_spec_op('zero')
         v.num_attrs.add('zero')
         return v.p.add_node(v)
 
@@ -273,14 +304,28 @@ class GraphVal:
         return f'{self.op_name}Y{args_str}'
 
     def print_op(self, mapper: NodeMapper):
-        op_args = ', '.join(
-            str_list(self.val_args) + tuple(map(mapper, self.a))
-        )
-        op_call = f'{self.op_name}({op_args});'
+        if not self.is_rendered:
+            return
+
+        arg_list = str_list(self.val_args) + tuple(map(mapper.get, self.a))
         if self.has_output:
-            func_ctx.codeln(f'{self.type} {mapper.get(self)} = {op_call}')
+            prefix = [f'{self.type_name} {mapper.get(self)} =']
         else:
-            func_ctx.codeln(op_call)
+            prefix = []
+        if self.code:
+            text = ' '.join(prefix + [
+                self.code.format(*arg_list)
+            ])
+        else:
+            op_args = ', '.join(arg_list)
+            op_call = f'{self.op_name}({op_args});'
+            text = ' '.join(prefix + [
+                op_call
+            ])
+        if self.comment is not None:  # TODO: multiline comment ?
+            text += ' // ' + self.comment.replace('\n', ' ')
+        print(text)
+        # func_ctx.codeln(text)
 
     @classmethod
     def from_op(cls, n: str, *a: GraphVal):
@@ -292,12 +337,57 @@ class GraphVal:
         return v.p.add_node(v)
 
     @classmethod
+    def from_spec_op(cls, n: str, *a: GraphVal):
+        op = graph_ctx.find_spec_op(n, cls)
+        v = op.out_t(
+            a=a,
+            op=op
+        )
+        return v.p.add_node(v)
+
+    @classmethod
+    def from_expr(cls, code, *a: GraphVal, op=None):
+        t: VType = cls
+        if op is not None:
+            t = op.out_t or t
+
+        v = t(
+            a=a,
+            op=op,
+            code=code
+        )
+        return v.p.add_node(v)
+
+    @classmethod
+    def stationary_code(cls, code: str, op=None, *a: GraphVal) -> GraphVal:
+        t: VType = cls
+        if op is not None:
+            t = op.out_t or t
+
+        graph_ctx.new_scope()
+        v = t(
+            a=a,
+            op=op,
+            code=code,
+            remove_duplicates=False
+        )
+        v.scope_n = graph_ctx.get_scope_n()
+        r = v.p.add_node(v)
+        graph_ctx.new_scope()
+        return r
+
+    @classmethod
     def var(cls, var_name: str, start_scope=True):
-        v = cls()
+        v = cls(
+            op=graph_ctx.find_spec_op('load', cls)
+        )
 
         v.key = f'{var_name}Z{cls.__name__}'
+        v.var_name = var_name
+        v.is_rendered = False
         if start_scope:
             v.scope_n = 0
+
         return v.p.add_node(v)
 
     @classmethod
@@ -313,7 +403,6 @@ class GraphVal:
             a=(self, arr, idx),
             op=graph_ctx.find_store_op(type(self))
         )
-        v.has_output = False
         return v.p.add_node(v)
 
     @classmethod
@@ -330,6 +419,8 @@ class GraphVal:
         return v.p.add_node(v)
 
     def cvt(self, t: VType):
+        if t is type(self):
+            return self
         v = t(
             a=(self,),
             op=graph_ctx.find_cvt_op(self, t)
@@ -338,10 +429,10 @@ class GraphVal:
 
     def sep(self):
         v = type(self)(
-            a=(self,)
+            a=(self,),
+            remove_duplicates=False
         )
 
-        v.key = str(v.orig)  # do not remove duplicates
         v.scope_n = v.p.get_scope_n()  # put separator in current scope
         return v.p.add_node(v)
 

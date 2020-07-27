@@ -1,5 +1,8 @@
+from speedutils.shader.base import SimpleVertexShader
+
 from .proc_ctx import new_graph, proc
 from .proc_descr import ProcDescr
+from .shader.types import Mat3, Mat4, Vec2, Vec3, Vec4
 from .vtypes import float_, int32_, v4f
 
 pd = ProcDescr(
@@ -24,8 +27,10 @@ pd = ProcDescr(
         ('negYv4', v4f, 5.0, (5,), True),
         ('notbitYv4f', v4f, 5.0, (5,), True),
         ('cvtYv4fXfloat', float_, 5.0, (7,), True),
+        ('cvtYfloatXint32', int32_, 5.0, (7,), True),
 
         ('zeroYint32Y', int32_, 1.0, (4,), True),
+        ('zeroYfloat', float_, 1.0, (4,), True),
         ('constYint32', int32_, 1.0, (4,), True),
         ('loadYint32', int32_, 7.0, (6, 1), True),
         ('storYint32', None, 7.0, (6, 1), True),
@@ -33,9 +38,26 @@ pd = ProcDescr(
         ('addYint32Xint32', int32_, 1.0, (4,), True),
         ('mulYint32Xint32', int32_, 3.0, (4,), True),
         ('mulYint32Xfloat', float_, 3.0, (4,), True),
-        ('addYint32Xfloat', float_, 3.0, (4,), True)
+        ('addYint32Xfloat', float_, 3.0, (4,), True),
+
+        ('concatYvec4', Vec4, 1.0, (3,), True),
+        ('concatYvec2', Vec2, 1.0, (3,), True),
+        ('get_elemYvec4', float_, 1.0, (3,), True),
+        ('cvtYmat4Xmat3', Mat3, 4.0, (3,), True),
+        ('mulYmat4Xvec4', Vec4, 4.0, (4,), True),
+        ('mulYmat3Xvec3', Vec3, 4.0, (4,), True),
+        ('normalizeYvec3', Vec3, 5.0, (4,), True),
+        ('divYvec2Xfloat', Vec2, 4.0, (4,), True),
+        ('loadYmat4', Mat4, 8.0, (6, 1), True),
+        ('loadYvec4', Vec4, 4.0, (6, 1), True),
+        ('loadYvec3', Vec3, 4.0, (6, 1), True),
+        ('loadYvec2', Vec2, 4.0, (6, 1), True),
+        ('storYvec4', None, 4.0, (6, 1), True),
+        ('storYvec3', None, 4.0, (6, 1), True),
+        ('storYvec2', None, 4.0, (6, 1), True),
     )
 )
+
 
 # @LoopFunc(
 #     loop_dims=(('y', 'y_sz'), ('z', 'z_sz'), ('x', 8), ('y', 8), ('z', 16)),
@@ -85,14 +107,36 @@ pd = ProcDescr(
 #         })
 #     print(func_reg)
 
-with proc(pd), new_graph() as g:
-    a = float_.var('yooooo')
-    b = float_.var('yeeeee')
-    c = a + b
-    c *= a
-    c.store(int32_.var('arr xD'), int32_.var('pp'))
+def test_graph():
+    with proc(pd), new_graph() as g:
+        a = float_.var('yooooo')
+        b = float_.var('yeeeee')
+        c = a + b
+        c *= a
+        c = c.cvt(int32_)
+        c.store(int32_.var('arr xD'), int32_.var('pp'))
 
     g.print_graph()
+
+
+# def test_func():
+#     @Func(yo=1.0, elo=2.0)
+#     def ttest():
+#         a = float_.var('yo', const=False)
+#         b = float_.var('elo', const=True)
+#         c = float_.var('eloo', const=True, default=0.8)
+#         (a * b * c * g).store('&c')
+
+def test_shader():
+    with proc(pd):
+        vert_shader = SimpleVertexShader()
+        vert_content = vert_shader.gen()
+        with open('a.vert', 'w') as f:
+            f.write(vert_content)
+
+
+# test_graph()
+test_shader()
 
 # ttest()
 

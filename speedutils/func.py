@@ -1,7 +1,7 @@
 from typing import Any, Dict, Iterable, List, NamedTuple, Tuple
 
 from .graphval import GraphVal
-from .proc_ctx import func_scope, graph_ctx, new_graph, proc_ctx, use_only_vars, use_vars, vars_ctx
+from .proc_ctx import clear_vars, func_scope, graph_ctx, new_graph, proc_ctx, set_vars, vars_ctx
 from .vtypes import VType
 
 
@@ -27,7 +27,7 @@ class Func:
 
     def _filter_arg_type(self, t: VType):
         return sorted(
-            a for a in self._args.values() if a.type == t
+            a for a in self._args.values() if isinstance(a, t)
         )
 
     @property
@@ -61,14 +61,17 @@ class Func:
 
     def gen(self, opts):
         with func_scope(self):
-            with use_only_vars(**self._get_all_opts(opts)):
+            with clear_vars(**self._get_all_opts(opts)):
                 self._analyze()
 
-            with use_only_vars(**self._get_all_opts(opts)):
-                self.codeln('void {}({}) {{'.format(
-                    self._get_name(),
-                    ', '.join(f'{arg.type} {arg.name}' for arg in self._var_args)
-                ))
+            with clear_vars(**self._get_all_opts(opts)):
+                args_str = ', '.join(
+                    f'{arg.type.type_name} {arg.name}'
+                    for arg in self._var_args
+                )
+                self.codeln(
+                    f'void {self._get_name()}({args_str}) {{'
+                )
                 self._gen_body()
                 self.codeln('}')
 
@@ -82,7 +85,7 @@ class Func:
         else:
             a = self._args[name]
             if not isinstance(a.type, t):
-                raise ValueError(f'Invalid type `{t}` for `{name}` having already type `{a.type}`')
+                raise ValueError(f'Invalid type `{t.type_name}` for `{name}` having already type `{a.type}`')
 
         if default is not None:
             self._opts[name] = t.format(default)  # TODO: copy obj ?
@@ -196,19 +199,19 @@ class Func:
         opts = self._get_all_opts(kwargs)  # TODO: auto pick vars ?
         if not inline:
             with func_scope(self):
-                with use_only_vars(**opts):
+                with clear_vars(**opts):
                     registered = self._check_registered()
                     if not registered:
                         self._analyze()
                 if not registered:
                     opts = self._get_all_opts(kwargs)
             if not registered:
-                with use_only_vars(**opts):
+                with clear_vars(**opts):
                     self._register()
-            with use_vars(**opts):
+            with set_vars(**opts):
                 self._gen_call()
         else:
-            with use_vars(**opts):
+            with set_vars(**opts):
                 self._func()
 
     def decor(self, f):  # TODO: copy object ?

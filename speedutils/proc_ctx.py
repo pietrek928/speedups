@@ -92,7 +92,7 @@ def new_graph() -> Iterable['FlowGraph']:
 
 
 @contextmanager
-def use_vars(**kwargs):
+def set_vars(**kwargs):
     old = vars_ctx.set_vars(**kwargs)
     try:
         yield
@@ -101,7 +101,7 @@ def use_vars(**kwargs):
 
 
 @contextmanager
-def use_only_vars(**kwargs):
+def clear_vars(**kwargs):
     old = vars_ctx.reset_vars(**kwargs)
     try:
         yield

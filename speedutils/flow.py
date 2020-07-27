@@ -1,3 +1,4 @@
+from collections import defaultdict
 from itertools import chain
 from typing import Dict, Iterable, List, Optional, Set
 
@@ -20,16 +21,20 @@ class NodeMapper:
     def __init__(self, alias_mapper):
         self._alias_mapper = alias_mapper
         self._d = {}
-        self._n = 0
+        self._nd = defaultdict(int)
 
     def set(self, v: GraphVal, n: str = None):
         if not n:
-            n = f'v{self._n}'
-            self._n += 1
+            prefix = v.name_prefix or 'v'
+            n = f'{prefix}{self._nd[prefix]}'
+            self._nd[prefix] += 1
         self._d[v.orig] = n
 
     def get(self, v: GraphVal):
-        return self._d[self._alias_mapper(v).orig]
+        try:
+            return self._d[self._alias_mapper(v).orig]
+        except KeyError:
+            raise RuntimeError(f'No name registered for {v}, {v.__dict__}')
 
 
 class FlowGraph:
@@ -61,15 +66,20 @@ class FlowGraph:
 
     def find_op(self, n: str, a: Iterable[GraphVal]) -> OpDescr:
         t = tuple(v.type_name for v in a)
+        op_n = f'{n}Y{"X".join(t)}'
         try:
-            op_n = f'{n}Y{"X".join(t)}'
             return self.ops[op_n]
         except KeyError:
-            op_n = f'{n}Y{"X".join(sorted(t))}'
-            op = self.ops[op_n]
-            if not op.ordered:
-                return op
-            raise ValueError('Wrong argument order')
+            reorder_op_n = f'{n}Y{"X".join(sorted(t))}'
+            try:
+                op = self.ops[reorder_op_n]
+                if not op.ordered:
+                    return op
+            except KeyError:
+                raise ValueError(
+                    f'No operation `{op_n}` on types'
+                    f'{tuple(type(v) for v in a)}'
+                )
 
     def find_const_op(self, t: VType):
         op_n = f'constY{t.type_name}'
@@ -80,16 +90,23 @@ class FlowGraph:
         return self.ops[op_n]
 
     def find_cvt_op(self, v: GraphVal, t: VType):
-        op_n = f'cvtY{v.type_name}X{t}'
+        op_n = f'cvtY{v.type_name}X{t.type_name}'
         return self.ops[op_n]
 
     def find_store_op(self, t: VType):
         op_n = f'storY{t.type_name}'
         return self.ops[op_n]
 
+    def find_spec_op(self, name, t: VType):
+        op_n = f'{name}Y{t.type_name}'
+        try:
+            return self.ops[op_n]
+        except KeyError:
+            raise ValueError(f'No typespec-operation `{op_n}` on `{name}` for type {t}')
+
     def add_node(self, v: GraphVal) -> GraphVal:
         k = v.key
-        # v.p = self
+        # TODO: check and add parent nodes
         if k in self._op_idx:
             return self._op_idx[k].copy()
         else:
