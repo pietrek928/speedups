@@ -131,7 +131,7 @@ class Shader:
     @staticmethod
     def find_var(vars: Iterable[GraphVal], n, t=None) -> Optional[GraphVal]:
         for var in vars:
-            if var.name == n:
+            if var.var_name == n:
                 if t is not None:
                     if not var.istype(t):
                         raise ValueError(f'Input variable `{n}` with type {t} requested, but has type {var.type}')
@@ -150,33 +150,13 @@ class Shader:
     def out_(self, n: str, v: GraphVal, register=True):
         if self.find_var(self._output, n) is not None:
             raise ValueError(f'Output var `{n}` already set')
-        v.from_expr(
+        v = v.from_expr(
             f'{n} = {{}}', v,
             op=graph_ctx.find_store_op(type(v))
         )
+        v.var_name = n
         if register:
             self._output.append(v)
-
-    # def gen_var_name(self, prefix=None):
-    #     prefix = prefix or 'v'
-    #     n = f'{prefix}{self._name_counter[prefix]}'
-    #     self._name_counter[prefix] += 1
-    #     return n
-
-    # def add_function_call(self, rt: VType, func_name, *func_args):
-    #     rv = rt()
-    #     call_args = ', '.join(map(str, func_args))
-    #     self._code_lines.append(
-    #         f'{rv.typename} {rv} = {func_name}({call_args});'
-    #     )
-    #     return rv
-    #
-    # def add_operator_call(self, rt: Type[Var], op_name, op_arg1, op_arg2):
-    #     rv = rt()
-    #     self._code_lines.append(
-    #         f'{rv.typename} {rv} = {op_arg1} {op_name} {op_arg2};'
-    #     )
-    #     return rv
 
     def _gen_code(self):
         pass
@@ -184,20 +164,20 @@ class Shader:
     def _render_uniforms(self, fixed_location=True):
         for i, uni_v in enumerate(self._uniform_input):
             if fixed_location and self.supports_version(430):
-                yield f'layout(location = {i}) uniform {uni_v.typename} {uni_v};'
+                yield f'layout(location = {i}) uniform {uni_v.type_name} {uni_v.var_name};'
             else:
-                yield f'uniform {uni_v.typename} {uni_v};'
+                yield f'uniform {uni_v.type_name} {uni_v.var_name};'
 
     def _render_in(self, fixed_location=True):
         for i, in_v in enumerate(self._input):
             if fixed_location and self.supports_version(430):
-                yield f'layout(location = {i}) in {in_v.typename} {in_v};'
+                yield f'layout(location = {i}) in {in_v.type_name} {in_v.var_name};'
             else:
-                yield f'in {in_v.typename} {in_v};'
+                yield f'in {in_v.type_name} {in_v.var_name};'
 
     def _render_out(self):
         for out_v in self._output:
-            yield f'out {out_v.typename} {out_v};'
+            yield f'out {out_v.type_name} {out_v.var_name};'
 
     def _render_definitions(self):
         return ()
@@ -205,15 +185,16 @@ class Shader:
     def _render_content(self):
         with new_graph() as g:
             self._gen_code()
-            # g.print_graph()
-            g.gen_code()
+            code_lines = tuple(
+                g.render_code()
+            )
         yield f'#version {self._version}'
         yield from self._render_definitions()
         yield 'void main() {'
-        yield from self._code_lines
+        yield from code_lines
         yield '}'
 
-    def gen(self):
+    def render(self):
         old_val = _shader_context.set(self)
         try:
             return '\n'.join(self._render_content())

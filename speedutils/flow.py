@@ -5,6 +5,7 @@ from typing import Dict, Iterable, List, Optional, Set
 from . import optim
 from .graph import GraphOptim
 from .graphval import GraphVal, OpScope
+from .proc_descr import Op
 from .vtypes import OpDescr, VType
 
 
@@ -38,10 +39,10 @@ class NodeMapper:
 
 
 class FlowGraph:
-    def __init__(self, mem_levels, ops):
-        self.ops: Dict[str, OpDescr] = {}
+    def __init__(self, mem_levels, ops: Iterable[Op]):
+        self.ops: Dict[str, Op] = {}
         ports = set(sum(
-            (o[3] for o in ops),
+            (o.ports for o in ops),
             tuple(m[2] for m in mem_levels)
         ))
         p = optim._proc(len(ports))
@@ -50,12 +51,12 @@ class FlowGraph:
             p.new_mem_level(
                 size, port2n[port], load_time
             )
-        for n, out_t, len_t, ports, ordered in ops:
+        for o in ops:
             op_id = p.new_op(
-                len_t,
+                o.exec_t,
                 [port2n[p] for p in ports]
             )
-            self.ops[n] = OpDescr(n, op_id, ordered, out_t)
+            self.ops[o.name] = o
         self._op_idx: Dict[str, GraphVal] = {}
         self._proc: optim._proc = p
         self._use_stack = [1.0]
@@ -64,7 +65,7 @@ class FlowGraph:
 
         self.new_scope()
 
-    def find_op(self, n: str, a: Iterable[GraphVal]) -> OpDescr:
+    def find_op(self, n: str, a: Iterable[GraphVal]) -> Op:
         t = tuple(v.type_name for v in a)
         op_n = f'{n}Y{"X".join(t)}'
         try:
@@ -73,8 +74,9 @@ class FlowGraph:
             reorder_op_n = f'{n}Y{"X".join(sorted(t))}'
             try:
                 op = self.ops[reorder_op_n]
-                if not op.ordered:
+                if not op.args_ordered:
                     return op
+                raise KeyError('')
             except KeyError:
                 raise ValueError(
                     f'No operation `{op_n}` on types'
@@ -258,7 +260,7 @@ class FlowGraph:
             args = ' '.join(map(nums.get, v.a))
             print(f'{nums.get(v)}: {v.key} {args}')
 
-    def gen_code(self, ord: Optional[Iterable[int]] = None):
+    def render_code(self, ord: Optional[Iterable[int]] = None) -> Iterable[str]:
         nodes = self.used_ordered()
 
         if ord is None:
@@ -268,4 +270,4 @@ class FlowGraph:
         for i in ord:
             v = nodes[i]
             nums.set(v, v.var_name)
-            v.print_op(nums)
+            yield from v.render_op(nums)

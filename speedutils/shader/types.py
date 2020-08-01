@@ -1,8 +1,23 @@
 from typing import Iterable, Tuple
 
-from speedutils.graphval import GraphVal
+from speedutils.graphval import GraphVal, VType
 from speedutils.proc_ctx import graph_ctx
+from speedutils.proc_descr import Op
 from speedutils.vtypes import float_
+
+
+class ConcatOp(Op):
+    def __init__(self, ret_t: VType, **kwargs):
+        super().__init__(
+            name=f'concatY{ret_t.type_name}',
+            ret_t=ret_t,
+            expr='({})',
+            **kwargs
+        )
+
+    def format_expr(self, args):
+        args_str = ', '.join(args)
+        return f'{self.ret_t.type_name}({args_str})'
 
 
 class Float(float_):
@@ -81,7 +96,7 @@ class Vec(GraphVal):
         if not 0 <= n < self.dims[0]:
             raise IndexError(f'Invalid index {n} for {self.type_name}')
         if self.const:
-            return convert_arg(self._expr[n])
+            return convert_arg(self.val[n])
         return self.from_expr(
             f'{{}}.{self.ELEM_NAMES[n]}', self,
             op=graph_ctx.find_spec_op('get_elem', type(self))
@@ -148,7 +163,7 @@ class Vec(GraphVal):
         # if self.isaddsub or v.isaddsub:
         #
 
-        return self.from_op('dp', self, v)
+        return self.from_op('dot', self, v)
 
     # def __mul__(self, v):
     #     v = convert_arg(v)
@@ -256,7 +271,7 @@ def convert_arg(v) -> GraphVal:
         if len(v) == 1:
             return Float(v[0])
         elif len(v) in VEC_BY_LEN:
-            return VEC_BY_LEN[len(v)](v)
+            return VEC_BY_LEN[len(v)].from_const(v)
     raise ValueError(f'Count not convert {type(v)} {v}')
 
 

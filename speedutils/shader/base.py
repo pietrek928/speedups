@@ -157,7 +157,7 @@ class LightSource:
         reflect_intensity = (
             # z is reversed - we add -
             # -(b - (a-b)) = a - 2b
-                light_versor[2] - n[2] * (proj_len * 2.)
+                light_versor[2] - n[2] * (proj_len * Float.from_const(2.))
         )
         return proj_len.max(0.) + calc_poly(
             self._get_param('reflect_poly'), reflect_intensity.max(0.)

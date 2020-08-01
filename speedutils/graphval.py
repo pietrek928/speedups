@@ -3,12 +3,13 @@ from __future__ import annotations
 from copy import copy, deepcopy
 from typing import Iterable, List, NamedTuple, Optional, Set, TYPE_CHECKING, Tuple, Type
 
-from .proc_ctx import func_ctx, graph_ctx
+from .proc_ctx import graph_ctx
 from .utils import str_list
 
 if TYPE_CHECKING:
     from .vtypes import OpDescr
     from .flow import FlowGraph, NodeMapper
+    from .proc_descr import Op
 
 _orig_id = 1234
 
@@ -60,7 +61,7 @@ class GraphVal:
         self.num_attrs = set()
         self.orig = _next_orig()
 
-        self.op = op
+        self.op: Op = op
         self.code = code
         self.op_name = self.code
         if self.op is not None:
@@ -91,7 +92,7 @@ class GraphVal:
 
     @property
     def has_output(self):
-        return self.op is not None and self.op.out_t is not None
+        return self.op is not None and self.op.ret_t is not None
 
     def flush_attr(self) -> GraphVal:
         new_node = self.copy()
@@ -297,13 +298,13 @@ class GraphVal:
         )
 
     def _gen_key(self) -> str:
-        if self.op.ordered:
+        if self.op.args_ordered:
             args_str = 'X'.join(str(o.orig) for o in self.a)
         else:
             args_str = 'X'.join(sorted(str(o.orig) for o in self.a))
         return f'{self.op_name}Y{args_str}'
 
-    def print_op(self, mapper: NodeMapper):
+    def render_op(self, mapper: NodeMapper) -> Iterable[str]:
         if not self.is_rendered:
             return
 
@@ -317,20 +318,19 @@ class GraphVal:
                 self.code.format(*arg_list)
             ])
         else:
-            op_args = ', '.join(arg_list)
-            op_call = f'{self.op_name}({op_args});'
+            # op_args = ', '.join(arg_list)
+            # op_call = f'{self.op_name}({op_args});'
             text = ' '.join(prefix + [
-                op_call
+                self.op.format_expr(arg_list)
             ])
         if self.comment is not None:  # TODO: multiline comment ?
             text += ' // ' + self.comment.replace('\n', ' ')
-        print(text)
-        # func_ctx.codeln(text)
+        yield text
 
     @classmethod
     def from_op(cls, n: str, *a: GraphVal):
         op = graph_ctx.find_op(n, a)
-        v = op.out_t(
+        v = op.ret_t(
             a=a,
             op=op
         )
@@ -339,7 +339,7 @@ class GraphVal:
     @classmethod
     def from_spec_op(cls, n: str, *a: GraphVal):
         op = graph_ctx.find_spec_op(n, cls)
-        v = op.out_t(
+        v = op.ret_t(
             a=a,
             op=op
         )
@@ -349,7 +349,7 @@ class GraphVal:
     def from_expr(cls, code, *a: GraphVal, op=None):
         t: VType = cls
         if op is not None:
-            t = op.out_t or t
+            t = op.ret_t or t
 
         v = t(
             a=a,
@@ -362,7 +362,7 @@ class GraphVal:
     def stationary_code(cls, code: str, op=None, *a: GraphVal) -> GraphVal:
         t: VType = cls
         if op is not None:
-            t = op.out_t or t
+            t = op.ret_t or t
 
         graph_ctx.new_scope()
         v = t(

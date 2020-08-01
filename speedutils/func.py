@@ -53,7 +53,7 @@ class Func:
     def _gen_body(self):
         with new_graph() as graph:
             self._func()  # TODO: args by signature ?
-            graph.gen_code()
+            graph.render_code()
 
     def _analyze(self):
         with new_graph():
